@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
-import { CreateExpenseInput } from "./expenses.schema";
+import { CreateExpenseInput, MonthExpensesQuery } from "./expenses.schema";
 import { splitEqually, simplifyDebts, Balance } from "../settlement/settlement.algorithm";
 
 const toPaise = (rupees: number) => Math.round(rupees * 100);
@@ -11,22 +11,30 @@ export async function createExpense(userId: string, roomId: string, input: Creat
   const expenseId = crypto.randomUUID();
 
   return withUserContext(userId, async (client) => {
-    let splits: { userId: string; sharePaise: number }[];
+    // RLS already hides rooms the caller isn't in, so an empty result means
+    // "not your room" (or an empty room) - never a way to add to someone else's.
+    const members = await client.query<{ user_id: string }>("SELECT user_id FROM room_members WHERE room_id = $1", [roomId]);
+    const memberIds = new Set(members.rows.map((m) => m.user_id));
+    if (memberIds.size === 0) {
+      throw new AppError("Room not found", 404);
+    }
 
+    let splits: { userId: string; sharePaise: number }[];
     if (input.splitType === "equal") {
-      const members = await client.query<{ user_id: string }>(
-        "SELECT user_id FROM room_members WHERE room_id = $1",
-        [roomId]
-      );
-      if (members.rowCount === 0) {
-        throw new AppError("Room has no members to split with", 400);
-      }
-      splits = splitEqually(
-        amountPaise,
-        members.rows.map((m) => m.user_id)
-      );
+      splits = splitEqually(amountPaise, [...memberIds]);
     } else {
       splits = input.splits!.map((s) => ({ userId: s.userId, sharePaise: toPaise(s.amount) }));
+
+      // Shares must belong to room members, once each. A share assigned to an
+      // outsider would make the room's balances stop summing to zero, which
+      // breaks the settle-up plan for everyone in the room.
+      const seen = new Set<string>();
+      for (const s of splits) {
+        if (!memberIds.has(s.userId)) throw new AppError("Every split must be for a member of this room", 400);
+        if (seen.has(s.userId)) throw new AppError("Each member can appear only once in the splits", 400);
+        seen.add(s.userId);
+      }
+
       const splitTotal = splits.reduce((sum, s) => sum + s.sharePaise, 0);
       if (splitTotal !== amountPaise) {
         throw new AppError(
@@ -41,12 +49,12 @@ export async function createExpense(userId: string, roomId: string, input: Creat
       [expenseId, roomId, userId, input.description, amountPaise, userId]
     );
 
-    for (const split of splits) {
-      await client.query(
-        "INSERT INTO expense_splits (expense_id, user_id, share_paise) VALUES ($1,$2,$3)",
-        [expenseId, split.userId, split.sharePaise]
-      );
-    }
+    // One round trip for all shares instead of one INSERT per member.
+    await client.query(
+      `INSERT INTO expense_splits (expense_id, user_id, share_paise)
+       SELECT $1, s.user_id, s.share_paise FROM unnest($2::uuid[], $3::bigint[]) AS s(user_id, share_paise)`,
+      [expenseId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
+    );
 
     return { id: expenseId, description: input.description, amountPaise, paidBy: userId, splits };
   });
@@ -103,5 +111,84 @@ export async function getRoomBalances(userId: string, roomId: string) {
     }));
 
     return { balances, settlements };
+  });
+}
+
+// Months are cut in Indian time, not UTC - otherwise an expense added at
+// 1am IST on the 1st would be filed under the previous month.
+const APP_TIMEZONE = "Asia/Kolkata";
+
+// Every expense in every room the caller belongs to, for one month. There's
+// no "rooms I'm in" filter here on purpose: RLS already hides other rooms.
+export async function listMyExpenses(userId: string, { month, roomId }: MonthExpensesQuery) {
+  return withUserContext(userId, async (client) => {
+    const result = await client.query<{
+      id: string;
+      description: string;
+      amount_paise: string;
+      my_share_paise: string;
+      created_at: string;
+      paid_by: string;
+      paid_by_name: string;
+      room_id: string;
+      room_name: string;
+      room_type: string;
+    }>(
+      `SELECT e.id, e.description, e.amount_paise, e.created_at, e.paid_by, u.name AS paid_by_name,
+              r.id AS room_id, r.name AS room_name, r.type AS room_type,
+              COALESCE(es.share_paise, 0) AS my_share_paise
+       FROM expenses e
+       JOIN rooms r ON r.id = e.room_id
+       JOIN users u ON u.id = e.paid_by
+       LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
+       WHERE e.created_at >= ($2::date)::timestamp AT TIME ZONE '${APP_TIMEZONE}'
+         AND e.created_at <  ($2::date + interval '1 month')::timestamp AT TIME ZONE '${APP_TIMEZONE}'
+         AND ($3::uuid IS NULL OR e.room_id = $3)
+       ORDER BY e.created_at DESC`,
+      [userId, `${month}-01`, roomId ?? null]
+    );
+    return result.rows.map((r) => ({
+      ...r,
+      amount_paise: Number(r.amount_paise),
+      my_share_paise: Number(r.my_share_paise),
+    }));
+  });
+}
+
+// One row per month: what the group spent, what the caller paid, and the
+// caller's share. net = paid - share (positive = others owe you for that month).
+export async function getMonthlySummary(userId: string, roomId?: string) {
+  return withUserContext(userId, async (client) => {
+    const result = await client.query<{
+      month: string;
+      expense_count: string;
+      total_paise: string;
+      i_paid_paise: string;
+      my_share_paise: string;
+    }>(
+      `SELECT to_char(e.created_at AT TIME ZONE '${APP_TIMEZONE}', 'YYYY-MM') AS month,
+              COUNT(*) AS expense_count,
+              SUM(e.amount_paise) AS total_paise,
+              SUM(CASE WHEN e.paid_by = $1 THEN e.amount_paise ELSE 0 END) AS i_paid_paise,
+              SUM(COALESCE(es.share_paise, 0)) AS my_share_paise
+       FROM expenses e
+       LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
+       WHERE ($2::uuid IS NULL OR e.room_id = $2)
+       GROUP BY 1
+       ORDER BY 1 DESC`,
+      [userId, roomId ?? null]
+    );
+    return result.rows.map((r) => {
+      const iPaid = Number(r.i_paid_paise);
+      const myShare = Number(r.my_share_paise);
+      return {
+        month: r.month,
+        expenseCount: Number(r.expense_count),
+        totalPaise: Number(r.total_paise),
+        iPaidPaise: iPaid,
+        mySharePaise: myShare,
+        netPaise: iPaid - myShare,
+      };
+    });
   });
 }

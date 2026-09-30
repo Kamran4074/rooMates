@@ -6,8 +6,9 @@ import { site } from "@/lib/site";
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-20 border-b border-card-border bg-background/80 backdrop-blur">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg">
+      {/* 1fr | auto | 1fr keeps the nav truly centred regardless of the logo/button widths. */}
+      <div className="px-4 sm:px-8 h-16 grid grid-cols-[1fr_auto_1fr] items-center">
+        <Link href="/" className="flex items-center gap-2 font-bold text-lg justify-self-start">
           <Logo size={32} />
           {site.name}
         </Link>
@@ -20,7 +21,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-3 justify-self-end">
           <Link href="/signin" className="text-sm font-medium hover:text-primary">
             Sign In
           </Link>
@@ -33,7 +34,7 @@ export function SiteHeader() {
         </div>
 
         {/* <details> gives a working mobile menu with zero client JS. */}
-        <details className="md:hidden relative">
+        <details className="md:hidden relative justify-self-end col-start-3">
           <summary className="list-none p-2 cursor-pointer" aria-label="Open menu">
             <Menu className="h-5 w-5" />
           </summary>

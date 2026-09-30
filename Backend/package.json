@@ -28,7 +28,6 @@
     "morgan": "^1.12.1",
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.23.0",
-    "resend": "^6.30.0",
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.19.0",
     "zod": "^4.6.5"

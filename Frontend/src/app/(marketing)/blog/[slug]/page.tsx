@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
-import { posts, getPost, formatDate, Block } from "@/content/blog";
+import { posts, getPost, Block } from "@/content/blog";
+import { formatDate } from "@/lib/format";
 import { pageMetadata } from "@/lib/seo";
 import { site } from "@/lib/site";
 

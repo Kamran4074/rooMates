@@ -27,11 +27,6 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`);
-  return handleResponse<T>(res);
-}
-
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -61,14 +56,18 @@ async function tryRefreshAccessToken(): Promise<boolean> {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          logout();
+          // Only a definite "this token is no good" ends the session. A 5xx or
+          // rate-limit (429) is temporary - logging out for that would kick
+          // people out whenever the server hiccups.
+          if (res.status === 400 || res.status === 401) logout();
           return false;
         }
         const data = await res.json();
         setAuth(data.accessToken, data.refreshToken, data.user);
         return true;
       } catch {
-        logout();
+        // Network error (server down, offline): keep the session and just let
+        // this request fail; the next one will try refreshing again.
         return false;
       } finally {
         refreshPromise = null;
@@ -94,11 +93,14 @@ export async function apiAuthGet<T>(path: string): Promise<T> {
   return handleResponse<T>(res);
 }
 
-export async function apiAuthPost<T>(path: string, body: unknown): Promise<T> {
+async function authSend<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
   const res = await authFetch(path, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   return handleResponse<T>(res);
 }
+
+export const apiAuthPost = <T>(path: string, body: unknown) => authSend<T>("POST", path, body);
+export const apiAuthPatch = <T>(path: string, body: unknown) => authSend<T>("PATCH", path, body);

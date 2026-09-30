@@ -10,6 +10,7 @@ import { TextField } from "@/components/ui/TextField";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { TermsCheckbox } from "@/components/TermsCheckbox";
 
 export default function SignUpPage() {
   useRedirectIfAuthenticated();
@@ -97,24 +98,11 @@ export default function SignUpPage() {
           placeholder="Confirm your password"
         />
 
-        <label className="flex items-start gap-2 text-sm text-foreground/70">
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => setAgreed(e.target.checked)}
-            className="mt-0.5 accent-primary"
-          />
-          <span>
-            By creating an account means you agree to the{" "}
-            <Link href="/terms" target="_blank" className="text-primary font-medium">
-              Terms and Conditions
-            </Link>
-            , and our{" "}
-            <Link href="/privacy" target="_blank" className="text-primary font-medium">
-              Privacy Policy
-            </Link>
-          </span>
-        </label>
+        <TermsCheckbox
+          checked={agreed}
+          onChange={setAgreed}
+          prefix="By creating an account means you agree to the"
+        />
 
         <FormMessage error={error} />
 

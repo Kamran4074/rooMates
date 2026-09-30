@@ -220,47 +220,41 @@ export async function issueRefreshToken(userId: string): Promise<string> {
 }
 
 export async function issueTokenPair(user: AuthenticatedUser): Promise<TokenPair> {
-  const [accessToken, refreshToken] = await Promise.all([
-    issueAccessToken(user),
-    issueRefreshToken(user.userId),
-  ]);
-  return { accessToken, refreshToken };
+  return { accessToken: issueAccessToken(user), refreshToken: await issueRefreshToken(user.userId) };
 }
 
 // Rotation: the presented refresh token is revoked and a brand new one issued
 // alongside the new access token, rather than reusing the same refresh token
-// indefinitely. If a revoked token is ever presented again, that's a strong
-// signal it was stolen and reused - worth flagging even though this MVP
-// doesn't yet act on that signal beyond rejecting the request.
+// indefinitely. Check-and-revoke is ONE conditional UPDATE, so two concurrent
+// requests with the same token can't both win - only one row update succeeds.
 export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & { user: AuthenticatedUser }> {
-  const tokenHash = sha256(rawToken);
-
-  const result = await pool.query<{ id: string; user_id: string; revoked_at: string | null; expires_at: string }>(
-    "SELECT id, user_id, revoked_at, expires_at FROM refresh_tokens WHERE token_hash = $1",
-    [tokenHash]
+  const revoked = await pool.query<{ user_id: string }>(
+    `UPDATE refresh_tokens SET revoked_at = now()
+     WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+     RETURNING user_id`,
+    [sha256(rawToken)]
   );
-  const row = result.rows[0];
-
-  if (!row || row.revoked_at || new Date(row.expires_at) < new Date()) {
+  const userId = revoked.rows[0]?.user_id;
+  if (!userId) {
     throw new AppError("Invalid or expired refresh token", 401);
   }
 
-  await pool.query("UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1", [row.id]);
-
-  const user = await withUserContext(row.user_id, async (client) => {
-    const userResult = await client.query<{
+  const user = await withUserContext(userId, async (client) => {
+    const { rows } = await client.query<{
       id: string;
       organization_id: string;
       email: string;
       name: string;
+      picture: string | null;
       onboarding_completed: boolean;
-    }>("SELECT id, organization_id, email, name, onboarding_completed FROM users WHERE id = $1", [row.user_id]);
-    const u = userResult.rows[0];
+    }>("SELECT id, organization_id, email, name, picture, onboarding_completed FROM users WHERE id = $1", [userId]);
+    const u = rows[0];
     return {
       userId: u.id,
       organizationId: u.organization_id,
       email: u.email,
       name: u.name,
+      picture: u.picture ?? undefined,
       onboardingCompleted: u.onboarding_completed,
     } satisfies AuthenticatedUser;
   });
@@ -270,8 +264,7 @@ export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & 
 }
 
 export async function revokeRefreshToken(rawToken: string): Promise<void> {
-  const tokenHash = sha256(rawToken);
   await pool.query("UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL", [
-    tokenHash,
+    sha256(rawToken),
   ]);
 }

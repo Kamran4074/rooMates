@@ -39,7 +39,7 @@ The algorithm computes one net balance per person, then repeatedly matches the l
 | Backend | Node.js, Express 5, TypeScript, Zod, Winston + Morgan |
 | Database | PostgreSQL (Neon) with Row-Level Security, node-pg-migrate |
 | Auth | JWT access + refresh tokens, bcrypt, Google OAuth (ID-token verification), email OTP |
-| Email | Resend |
+| Email | Brevo (transactional API) |
 | Security | express-rate-limit, express-slow-down |
 | Docs & tests | OpenAPI generated from Zod schemas + Swagger UI, Jest |
 
@@ -50,7 +50,7 @@ flowchart LR
     U[Browser] -->|Next.js pages| FE[Frontend]
     FE -->|REST + JWT| API[Express API]
     API -->|app_user role, RLS enforced| DB[(PostgreSQL)]
-    API -->|OTP & contact emails| RS[Resend]
+    API -->|OTP & contact emails| RS[Brevo]
     API -->|verify ID token| G[Google OAuth]
     MIG[Migrations] -->|owner role| DB
 ```
@@ -67,7 +67,7 @@ flowchart LR
 ## Features
 
 - Sign up with email (OTP-verified) or Google; forgot/reset password via emailed code
-- First-login onboarding (name, optional phone)
+- 3-step onboarding (profile → first room → invite roommates); a unique mobile number is required to limit free-tier abuse via throwaway emails
 - Rooms for flatmates (recurring) or trips (one-off), joined via an 8-character invite code
 - Free plan limited to 2 rooms per account, enforced server-side
 - Expenses with equal or custom splits
@@ -105,7 +105,7 @@ Interactive docs are served at **`/api-docs`** (raw spec at `/api-docs.json`) wh
 
 - Node.js 20+
 - A PostgreSQL database (a free [Neon](https://neon.tech) project works; the migrations assume the database is named `neondb`)
-- A [Resend](https://resend.com) API key for emails
+- A [Brevo](https://www.brevo.com) API key and a verified sender address for emails (free plan: 300/day)
 - A Google OAuth client ID (optional — only needed for "Sign in with Google")
 
 ### Backend
@@ -127,11 +127,12 @@ npm run dev               # http://localhost:5000
 | `ACCESS_TOKEN_EXPIRES_IN` / `REFRESH_TOKEN_EXPIRES_DAYS` | Token lifetimes (default `15m` / `30`) |
 | `CORS_ORIGIN` | Frontend URL, e.g. `http://localhost:3000` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `RESEND_API_KEY` / `EMAIL_FROM` | Transactional email |
+| `BREVO_API_KEY` | Brevo API key (`xkeysib-…`, from *SMTP & API → API keys*) |
+| `EMAIL_FROM_NAME` / `EMAIL_FROM_ADDRESS` | Sender shown on emails — the address must be a verified Brevo sender |
 | `CONTACT_INBOX` | Where contact-form messages are delivered |
 | `TRUST_PROXY` | Number of reverse proxies in front of the API (`0` locally, usually `1` in production) |
 
-> With Resend's default `onboarding@resend.dev` sender, emails are only delivered to your own Resend account address. Verify a domain in Resend to email anyone.
+> Brevo lets you send from a single verified address without owning a domain. Without domain authentication, some emails may land in spam — authenticate a domain in Brevo for better deliverability.
 
 ### Frontend
 
@@ -167,6 +168,10 @@ Frontend/
     lib/                 API client with automatic token refresh, auth hooks, SEO helpers
     content/             blog posts
 ```
+
+## Code review
+
+A full review of the codebase — findings, fixes, Zustand usage and known trade-offs — is in [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
 
 ## Roadmap
 

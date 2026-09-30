@@ -72,7 +72,3 @@ export const posts: BlogPost[] = [
 export function getPost(slug: string) {
   return posts.find((p) => p.slug === slug);
 }
-
-export function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-}

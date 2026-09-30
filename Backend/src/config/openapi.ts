@@ -10,9 +10,9 @@ import {
   resetPasswordSchema,
 } from "../modules/auth/auth.schema";
 import { createRoomSchema, joinRoomSchema } from "../modules/rooms/rooms.schema";
-import { createExpenseSchema } from "../modules/expenses/expenses.schema";
-import { completeOnboardingSchema } from "../modules/users/users.schema";
-import { contactSchema } from "../modules/contact/contact.routes";
+import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchema } from "../modules/expenses/expenses.schema";
+import { profileSchema } from "../modules/users/users.schema";
+import { contactSchema } from "../modules/contact/contact.schema";
 
 const registry = new OpenAPIRegistry();
 
@@ -292,29 +292,58 @@ registry.registerPath({
   },
 });
 
+const profileResponseSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  name: z.string(),
+  phone: z.string().nullable().optional(),
+  picture: z.string().nullable().optional(),
+  onboarding_completed: z.boolean(),
+});
+
 registry.registerPath({
-  method: "post",
-  path: "/api/users/me/onboarding",
+  method: "get",
+  path: "/api/users/me",
   tags: ["Users"],
-  summary: "Complete first-login onboarding (name confirmation + optional phone)",
+  summary: "Current user's profile plus plan usage (plan, room limit, rooms used)",
   security: [{ [bearerAuth.name]: [] }],
-  request: { body: { content: { "application/json": { schema: completeOnboardingSchema } } } },
   responses: {
     200: {
-      description: "Profile updated",
+      description: "Profile and plan usage",
       content: {
         "application/json": {
-          schema: z.object({
-            id: z.string().uuid(),
-            email: z.string(),
-            name: z.string(),
-            phone: z.string().nullable().optional(),
-            picture: z.string().nullable().optional(),
-            onboarding_completed: z.boolean(),
+          schema: profileResponseSchema.extend({
+            plan: z.enum(["free", "paid"]),
+            max_rooms: z.number(),
+            room_count: z.number(),
           }),
         },
       },
     },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/users/me",
+  tags: ["Users"],
+  summary: "Update profile (name, phone)",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { body: { content: { "application/json": { schema: profileSchema } } } },
+  responses: {
+    200: { description: "Profile updated", content: { "application/json": { schema: profileResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/users/me/onboarding",
+  tags: ["Users"],
+  summary: "Finish onboarding: saves profile and marks onboarding complete",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { body: { content: { "application/json": { schema: profileSchema } } } },
+  responses: {
+    200: { description: "Profile saved, onboarding complete", content: { "application/json": { schema: profileResponseSchema } } },
   },
 });
 
@@ -326,6 +355,66 @@ registry.registerPath({
   request: { body: { content: { "application/json": { schema: contactSchema } } } },
   responses: {
     200: { description: "Message sent", content: { "application/json": { schema: z.object({ message: z.string() }) } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/expenses",
+  tags: ["Expenses"],
+  summary: "All expenses in one month across every room the caller belongs to (months cut in IST)",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { query: monthExpensesQuerySchema },
+  responses: {
+    200: {
+      description: "Expenses for the month, newest first",
+      content: {
+        "application/json": {
+          schema: z.array(
+            z.object({
+              id: z.string().uuid(),
+              description: z.string(),
+              amount_paise: z.number(),
+              my_share_paise: z.number(),
+              created_at: z.string(),
+              paid_by: z.string().uuid(),
+              paid_by_name: z.string(),
+              room_id: z.string().uuid(),
+              room_name: z.string(),
+              room_type: z.enum(["roommates", "trip"]),
+            })
+          ),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/expenses/monthly-summary",
+  tags: ["Expenses"],
+  summary: "Per-month totals for the caller: group spend, what they paid, their share, net",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { query: monthlySummaryQuerySchema },
+  responses: {
+    200: {
+      description: "One row per month, newest first",
+      content: {
+        "application/json": {
+          schema: z.array(
+            z.object({
+              month: z.string().describe("YYYY-MM"),
+              expenseCount: z.number(),
+              totalPaise: z.number(),
+              iPaidPaise: z.number(),
+              mySharePaise: z.number(),
+              netPaise: z.number().describe("Positive = others owe you for that month"),
+            })
+          ),
+        },
+      },
+    },
   },
 });
 

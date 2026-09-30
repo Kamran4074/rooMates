@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
-import { posts, formatDate } from "@/content/blog";
+import { posts } from "@/content/blog";
+import { formatDate } from "@/lib/format";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata({

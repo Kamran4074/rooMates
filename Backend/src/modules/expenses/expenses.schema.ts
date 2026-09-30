@@ -15,3 +15,14 @@ export const createExpenseSchema = z
   });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
+
+const roomId = z.string().uuid("Invalid room id").optional();
+
+export const monthExpensesQuerySchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must be YYYY-MM"),
+  roomId,
+});
+
+export const monthlySummaryQuerySchema = z.object({ roomId });
+
+export type MonthExpensesQuery = z.infer<typeof monthExpensesQuerySchema>;

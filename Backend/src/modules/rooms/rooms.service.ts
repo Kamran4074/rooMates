@@ -19,6 +19,13 @@ export async function createRoom(userId: string, organizationId: string, input: 
   const inviteCode = generateInviteCode();
 
   return withUserContext(userId, async (client) => {
+    // A (unique) phone number is the anti-abuse anchor for the free-tier room
+    // quota, so it's enforced here rather than trusting the UI's onboarding flow.
+    const me = await client.query<{ phone: string | null }>("SELECT phone FROM users WHERE id = $1", [userId]);
+    if (!me.rows[0]?.phone) {
+      throw new AppError("Add your mobile number before creating a room", 403);
+    }
+
     // count_org_rooms bypasses RLS deliberately - a quota check has to see
     // every room the org owns, not just the ones this user is a member of.
     // The organizations lookup below still goes through normal RLS (it works
@@ -82,14 +89,29 @@ export async function joinRoom(userId: string, inviteCode: string) {
 }
 
 export async function listMyRooms(userId: string) {
-  // No WHERE clause needed here - rooms_select RLS already restricts this to
-  // rooms the caller is a member of. This is the actual payoff of doing RLS
-  // properly: the query can't accidentally leak another tenant's rooms.
+  // No "rooms I'm in" WHERE clause needed - rooms_select RLS already restricts
+  // this to the caller's rooms. That's the payoff of doing RLS properly: the
+  // query can't accidentally leak another tenant's rooms.
+  //
+  // my_net_paise (what I paid minus my shares, per room) is computed here in
+  // one query so the dashboard doesn't need a separate balances call per room.
   return withUserContext(userId, async (client) => {
-    const result = await client.query(
-      "SELECT id, name, type, invite_code, created_by, created_at FROM rooms ORDER BY created_at DESC"
+    const result = await client.query<{ my_net_paise: string }>(
+      `SELECT r.id, r.name, r.type, r.invite_code, r.created_by, r.created_at,
+              COALESCE(paid.total, 0) - COALESCE(owed.total, 0) AS my_net_paise
+       FROM rooms r
+       LEFT JOIN (
+         SELECT room_id, SUM(amount_paise) AS total FROM expenses WHERE paid_by = $1 GROUP BY room_id
+       ) paid ON paid.room_id = r.id
+       LEFT JOIN (
+         SELECT e.room_id, SUM(es.share_paise) AS total
+         FROM expense_splits es JOIN expenses e ON e.id = es.expense_id
+         WHERE es.user_id = $1 GROUP BY e.room_id
+       ) owed ON owed.room_id = r.id
+       ORDER BY r.created_at DESC`,
+      [userId]
     );
-    return result.rows;
+    return result.rows.map((r) => ({ ...r, my_net_paise: Number(r.my_net_paise) }));
   });
 }
 

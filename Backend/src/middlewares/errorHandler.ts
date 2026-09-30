@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { logger } from "../config/logger";
 
 export class AppError extends Error {
@@ -15,7 +15,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   if (err instanceof ZodError) {
     return res.status(400).json({
       message: "Validation failed",
-      errors: err.flatten().fieldErrors,
+      errors: z.flattenError(err).fieldErrors,
     });
   }
 

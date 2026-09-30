@@ -10,6 +10,7 @@ import { checkDbConnection } from "./config/db";
 import authRoutes from "./modules/auth/auth.routes";
 import roomRoutes from "./modules/rooms/rooms.routes";
 import expenseRoutes from "./modules/expenses/expenses.routes";
+import myExpensesRoutes from "./modules/expenses/myExpenses.routes";
 import userRoutes from "./modules/users/users.routes";
 import contactRoutes from "./modules/contact/contact.routes";
 
@@ -32,11 +33,14 @@ app.get("/api/health", async (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/rooms/:roomId", expenseRoutes);
+app.use("/api/expenses", myExpensesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/contact", contactRoutes);
 
-app.get("/api-docs.json", (_req, res) => res.json(getOpenApiDocument()));
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(getOpenApiDocument()));
+// The spec is static for a given build - generate it once, not per request.
+const openApiDocument = getOpenApiDocument();
+app.get("/api-docs.json", (_req, res) => res.json(openApiDocument));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
 app.use(errorHandler);
 

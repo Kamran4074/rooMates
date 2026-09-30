@@ -55,6 +55,7 @@ function VerifyEmailForm() {
       <h1 className="text-3xl font-bold mb-2">Verify your email</h1>
       <p className="text-foreground/50 mb-8">
         We&apos;ve sent a 6-digit code to <span className="font-medium text-foreground">{email || "your email"}</span>.
+        Can&apos;t find it? Check your Spam folder.
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">

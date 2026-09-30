@@ -60,7 +60,7 @@ function ResetPasswordForm() {
       <h1 className="text-3xl font-bold mb-2">Reset password</h1>
       <p className="text-foreground/50 mb-8">
         If an account exists for <span className="font-medium text-foreground">{email || "that email"}</span>, we&apos;ve
-        sent it a 6-digit code.
+        sent it a 6-digit code. Can&apos;t find it? Check your Spam folder.
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
