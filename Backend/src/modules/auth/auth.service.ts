@@ -46,10 +46,16 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfil
   if (!payload || !payload.sub || !payload.email) {
     throw new AppError("Invalid Google token", 401);
   }
+  // Google sign-in links to an existing account by email, so the email must
+  // be one Google has actually confirmed (always true for Gmail, not
+  // guaranteed for every Google account).
+  if (!payload.email_verified) {
+    throw new AppError("Your Google account's email isn't verified", 401);
+  }
 
   return {
     googleId: payload.sub,
-    email: payload.email,
+    email: payload.email.toLowerCase(),
     name: payload.name ?? payload.email,
     picture: payload.picture,
   };
@@ -57,12 +63,21 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfil
 
 // Runs as app_user but bypasses RLS internally (the DB function is SECURITY
 // DEFINER) - this is the one pre-authentication lookup that has to, since we
-// don't know the caller's internal user id until this returns it.
+// don't know the caller's internal user id until this returns it. An existing
+// email/password account with the same email gets linked, not duplicated.
 export async function findOrCreateGoogleUser(profile: GoogleProfile): Promise<AuthenticatedUser> {
-  const result = await pool.query<{ user_id: string; organization_id: string; onboarding_completed: boolean }>(
-    "SELECT * FROM find_or_create_google_user($1, $2, $3, $4)",
-    [profile.googleId, profile.email, profile.name, profile.picture ?? null]
-  );
+  let result;
+  try {
+    result = await pool.query<{ user_id: string; organization_id: string; onboarding_completed: boolean }>(
+      "SELECT * FROM find_or_create_google_user($1, $2, $3, $4)",
+      [profile.googleId, profile.email, profile.name, profile.picture ?? null]
+    );
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      throw new AppError("This email is already linked to a different Google account", 409);
+    }
+    throw err;
+  }
 
   const row = result.rows[0];
   return {
@@ -115,21 +130,36 @@ export async function signupWithPassword(input: SignupInput): Promise<void> {
     ]);
     userId = result.rows[0].user_id;
   } catch (err) {
-    if ((err as { code?: string }).code === "23505") {
-      throw new AppError("An account with this email already exists", 409);
+    if ((err as { code?: string }).code !== "23505") throw err;
+
+    // Signed up before but never entered the code (closed the tab, code
+    // expired): let them start over rather than dead-ending on "already
+    // exists". The latest details win; only the inbox owner can verify.
+    const existing = await findUserByEmail(input.email);
+    if (!existing || existing.email_verified) {
+      throw new AppError("An account with this email already exists. Sign in instead.", 409);
     }
-    throw err;
+    userId = existing.user_id;
+    await withUserContext(userId, (client) =>
+      client.query("UPDATE users SET password_hash = $1, name = $2 WHERE id = $3", [passwordHash, input.name, userId])
+    );
   }
 
   await issueOtp(userId, input.email, "email_verification");
 }
 
+// Compared against when the email has no password, so a login for an unknown
+// email takes as long as one with a wrong password - otherwise response time
+// alone would reveal which emails are registered.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("roomates-timing-equaliser", 10);
+
 export async function loginWithPassword(input: LoginInput): Promise<AuthenticatedUser> {
   const row = await findUserByEmail(input.email);
+  const passwordMatches = await bcrypt.compare(input.password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
 
   // Same message whether the email doesn't exist, has no password (e.g. a
   // Google-only account) or the password is wrong - don't leak which.
-  if (!row || !row.password_hash || !(await bcrypt.compare(input.password, row.password_hash))) {
+  if (!row || !row.password_hash || !passwordMatches) {
     throw new AppError("Invalid email or password", 401);
   }
 

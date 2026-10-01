@@ -28,6 +28,7 @@ export function PasswordField({ label, required, className, ...props }: Password
           onClick={() => setShow((v) => !v)}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40"
           tabIndex={-1}
+          aria-label={show ? "Hide password" : "Show password"}
         >
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>

@@ -51,15 +51,30 @@ function ResetPasswordForm() {
 
   async function handleResend() {
     setError(null);
+    setNotice(null);
     await apiPost("/api/auth/forgot-password", { email });
     setNotice("A new code is on its way.");
+  }
+
+  // Opened directly (bookmark, refresh after clearing the URL): there's no
+  // email to reset, so send them back to where they enter one.
+  if (!email) {
+    return (
+      <AuthShell>
+        <h1 className="text-3xl font-bold mb-2">Reset password</h1>
+        <p className="text-foreground/50 mb-8">Start by telling us which account to reset.</p>
+        <Link href="/forgot-password" className="text-primary font-medium">
+          Enter your email
+        </Link>
+      </AuthShell>
+    );
   }
 
   return (
     <AuthShell>
       <h1 className="text-3xl font-bold mb-2">Reset password</h1>
       <p className="text-foreground/50 mb-8">
-        If an account exists for <span className="font-medium text-foreground">{email || "that email"}</span>, we&apos;ve
+        If an account exists for <span className="font-medium text-foreground">{email}</span>, we&apos;ve
         sent it a 6-digit code. Can&apos;t find it? Check your Spam folder.
       </p>
 
@@ -69,6 +84,8 @@ function ResetPasswordForm() {
           label="New Password"
           required
           minLength={8}
+          maxLength={72}
+          autoComplete="new-password"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="At least 8 characters"
@@ -76,6 +93,7 @@ function ResetPasswordForm() {
         <PasswordField
           label="Confirm New Password"
           required
+          autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           placeholder="Re-enter new password"
@@ -87,7 +105,7 @@ function ResetPasswordForm() {
       </form>
 
       <div className="flex items-center justify-between mt-6">
-        <ResendCodeButton onResend={handleResend} />
+        <ResendCodeButton onResend={handleResend} onError={setError} />
         <Link href="/signin" className="text-sm text-foreground/60">
           Back to Sign In
         </Link>

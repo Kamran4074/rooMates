@@ -41,6 +41,8 @@ export default function ForgotPasswordPage() {
           label="Email"
           type="email"
           required
+          autoComplete="email"
+          autoFocus
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="info@gmail.com"

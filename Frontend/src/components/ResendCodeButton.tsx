@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { errorMessage } from "@/lib/api";
 
 // Mirrors the backend's 60s resend cooldown so the button can't be spammed.
 const COOLDOWN_SECONDS = 60;
 
-export function ResendCodeButton({ onResend }: { onResend: () => Promise<void> }) {
+export function ResendCodeButton({
+  onResend,
+  onError,
+}: {
+  onResend: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
   const [secondsLeft, setSecondsLeft] = useState(COOLDOWN_SECONDS);
   const [sending, setSending] = useState(false);
 
@@ -20,6 +27,8 @@ export function ResendCodeButton({ onResend }: { onResend: () => Promise<void> }
     try {
       await onResend();
       setSecondsLeft(COOLDOWN_SECONDS);
+    } catch (err) {
+      onError(errorMessage(err, "Couldn't send a new code. Please try again."));
     } finally {
       setSending(false);
     }

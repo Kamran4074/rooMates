@@ -46,6 +46,7 @@ function VerifyEmailForm() {
 
   async function handleResend() {
     setError(null);
+    setNotice(null);
     await apiPost("/api/auth/resend-verification", { email });
     setNotice("A new code is on its way.");
   }
@@ -67,7 +68,7 @@ function VerifyEmailForm() {
       </form>
 
       <div className="flex items-center justify-between mt-6">
-        <ResendCodeButton onResend={handleResend} />
+        <ResendCodeButton onResend={handleResend} onError={setError} />
         <Link href="/signup" className="text-sm text-foreground/60">
           Wrong email?
         </Link>

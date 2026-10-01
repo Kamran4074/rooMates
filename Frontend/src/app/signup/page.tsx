@@ -11,6 +11,7 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { TermsCheckbox } from "@/components/TermsCheckbox";
+import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 
 export default function SignUpPage() {
   useRedirectIfAuthenticated();
@@ -59,6 +60,7 @@ export default function SignUpPage() {
           <TextField
             label="First Name"
             required
+            autoComplete="given-name"
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             placeholder="Enter your first name"
@@ -66,6 +68,7 @@ export default function SignUpPage() {
           <TextField
             label="Last Name"
             required
+            autoComplete="family-name"
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             placeholder="Enter your last name"
@@ -76,6 +79,7 @@ export default function SignUpPage() {
           label="Email"
           type="email"
           required
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Enter your email"
@@ -85,14 +89,17 @@ export default function SignUpPage() {
           label="Password"
           required
           minLength={8}
+          maxLength={72}
+          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter your password"
+          placeholder="At least 8 characters"
         />
 
         <PasswordField
           label="Confirm Password"
           required
+          autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           placeholder="Confirm your password"
@@ -110,6 +117,8 @@ export default function SignUpPage() {
           {loading ? "Creating account..." : "Sign Up"}
         </Button>
       </form>
+
+      <GoogleAuthButton agreed={agreed} onError={setError} />
 
       <p className="text-sm text-foreground/60 mt-8">
         Already have an account?{" "}
