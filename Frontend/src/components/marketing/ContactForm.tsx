@@ -21,8 +21,8 @@ export function ContactForm() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await apiPost<{ message: string }>("/api/contact", { name, email, message });
-      setSuccess(res.message);
+      await apiPost("/api/contact", { name, email, message });
+      setSuccess("Thanks! We'll get back to you soon.");
       setName("");
       setEmail("");
       setMessage("");

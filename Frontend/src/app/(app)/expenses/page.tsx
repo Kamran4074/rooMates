@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
-import { Table, Th, Td } from "@/components/ui/Table";
+import { Table, Th, Td, MobileList } from "@/components/ui/Table";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { AddExpenseAnyRoom } from "@/components/rooms/AddExpenseAnyRoom";
@@ -125,7 +125,28 @@ function Expenses() {
             </Button>
           </div>
         ) : (
-          <Table>
+          <>
+          <MobileList>
+            {expenses.map((e) => (
+              <li key={e.id} className="py-3 flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">{e.description}</p>
+                  <p className="text-xs text-foreground/50 truncate">
+                    {formatDate(e.created_at, "short")} ·{" "}
+                    <Link href={`/rooms/${e.room_id}`} className="hover:text-primary">
+                      {e.room_name}
+                    </Link>{" "}
+                    · {e.paid_by === user?.id ? "You paid" : `${e.paid_by_name} paid`}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-semibold">{rupees(e.amount_paise)}</p>
+                  <p className="text-xs text-foreground/50">{e.my_share_paise ? `Your share ${rupees(e.my_share_paise)}` : "Not in split"}</p>
+                </div>
+              </li>
+            ))}
+          </MobileList>
+          <Table className="hidden sm:block">
             <thead>
               <tr>
                 <Th>Date</Th>
@@ -157,6 +178,7 @@ function Expenses() {
               ))}
             </tbody>
           </Table>
+          </>
         )}
       </Card>
 

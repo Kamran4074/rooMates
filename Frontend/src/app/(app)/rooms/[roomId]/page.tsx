@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Plus, UserPlus, Receipt, Scale, Users as UsersIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, UserPlus, UserMinus, Receipt, Scale, Users as UsersIcon } from "lucide-react";
+import { apiAuthDelete, errorMessage } from "@/lib/api";
+import { FormMessage } from "@/components/ui/FormMessage";
 import { rupees, formatDate } from "@/lib/format";
-import { useApiQuery } from "@/lib/useApiQuery";
-import type { Room, Member, Expense, RoomBalances } from "@/lib/types";
+import { useApiQuery, usePagedQuery } from "@/lib/useApiQuery";
+import type { RoomDetail, Member, Expense, RoomBalances, Fund } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,40 +19,64 @@ import { Avatar } from "@/components/ui/Avatar";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { InviteShare } from "@/components/rooms/InviteShare";
 import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
+import { RoomFundCard } from "@/components/funds/RoomFundCard";
+import { Pagination } from "@/components/ui/Pagination";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const user = useAuthStore((s) => s.user);
   const reloadRooms = useRoomsStore((s) => s.load);
   const [modal, setModal] = useState<"expense" | "invite" | null>(null);
+  const [memberError, setMemberError] = useState<string | null>(null);
 
   // Four independent requests, fired in parallel.
-  const roomQuery = useApiQuery<Room>(`/api/rooms/${roomId}`);
+  const roomQuery = useApiQuery<RoomDetail>(`/api/rooms/${roomId}`);
   const membersQuery = useApiQuery<Member[]>(`/api/rooms/${roomId}/members`);
-  const expensesQuery = useApiQuery<Expense[]>(`/api/rooms/${roomId}/expenses`);
+  const [expensePage, setExpensePage] = useState(1);
+  const expensesQuery = usePagedQuery<Expense>(`/api/rooms/${roomId}/expenses?page=${expensePage}&limit=20`);
   const balancesQuery = useApiQuery<RoomBalances>(`/api/rooms/${roomId}/balances`);
+  // Not part of the loading gate below - the fund card just appears when ready.
+  const fundsQuery = useApiQuery<Fund[]>(`/api/rooms/${roomId}/funds`);
+  const latestFund = fundsQuery.data ? (fundsQuery.data[0] ?? null) : undefined;
 
   const room = roomQuery.data;
   const members = membersQuery.data ?? [];
-  const expenses = expensesQuery.data ?? [];
+  const expenses = expensesQuery.data?.items ?? [];
   const balances = balancesQuery.data?.balances ?? [];
   const settlements = balancesQuery.data?.settlements ?? [];
 
+  async function handleRemove(memberId: string, name: string) {
+    if (!window.confirm(`Remove ${name} from this room? The invite code will also change, so they can't rejoin with it.`)) return;
+    setMemberError(null);
+    try {
+      await apiAuthDelete(`/api/rooms/${roomId}/members/${memberId}`);
+      membersQuery.reload();
+      balancesQuery.reload();
+      roomQuery.reload(); // new invite code
+    } catch (err) {
+      setMemberError(errorMessage(err, "Couldn't remove them"));
+    }
+  }
+
   function onExpenseAdded() {
     setModal(null);
-    expensesQuery.reload();
+    // The new expense is the newest, i.e. on page 1.
+    if (expensePage === 1) expensesQuery.reload();
+    else setExpensePage(1);
+    roomQuery.reload(); // totals
     balancesQuery.reload();
     reloadRooms(); // keeps the dashboard/sidebar balance for this room in sync
   }
 
   const error = roomQuery.error ?? membersQuery.error ?? expensesQuery.error ?? balancesQuery.error;
   if (error) return <p className="text-danger">{error}</p>;
-  if (!room || roomQuery.loading || membersQuery.loading || expensesQuery.loading || balancesQuery.loading) {
+  if (!room || !expensesQuery.data || membersQuery.loading || balancesQuery.loading) {
     return <p className="text-foreground/50">Loading room...</p>;
   }
 
+  const isAdmin = room.my_role === "admin";
   const myNet = balances.find((b) => b.userId === user?.id)?.netPaise ?? 0;
-  const total = expenses.reduce((sum, e) => sum + Number(e.amount_paise), 0);
+  const total = room.total_spent_paise;
 
   return (
     <>
@@ -67,9 +93,11 @@ export default function RoomPage() {
         subtitle={`${room.type === "trip" ? "Trip" : "Flat"} · ${members.length} ${members.length === 1 ? "member" : "members"}`}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setModal("invite")}>
-              <UserPlus className="h-4 w-4" /> Invite
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setModal("invite")}>
+                <UserPlus className="h-4 w-4" /> Invite
+              </Button>
+            )}
             <Button variant="dark" size="sm" onClick={() => setModal("expense")}>
               <Plus className="h-4 w-4" /> Add expense
             </Button>
@@ -77,7 +105,7 @@ export default function RoomPage() {
         }
       />
 
-      <div className="grid sm:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
         <Card
           className={`p-6 rounded-3xl ${myNet > 0 ? "bg-success/10 border-success/30" : myNet < 0 ? "bg-danger/10 border-danger/30" : ""}`}
         >
@@ -91,12 +119,12 @@ export default function RoomPage() {
           <p className="text-sm text-foreground/60 mb-1">Total spent in this room</p>
           <p className="text-3xl font-semibold">{rupees(total)}</p>
           <p className="text-sm text-foreground/60 mt-1">
-            across {expenses.length} {expenses.length === 1 ? "expense" : "expenses"}
+            across {room.expense_count} {room.expense_count === 1 ? "expense" : "expenses"}
           </p>
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 rounded-3xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4">
             <Receipt className="h-4 w-4" /> Expenses
@@ -122,9 +150,12 @@ export default function RoomPage() {
               ))}
             </ul>
           )}
+          {expensesQuery.data && <Pagination pagination={expensesQuery.data.pagination} onPage={setExpensePage} />}
         </Card>
 
         <div className="flex flex-col gap-6">
+          <RoomFundCard roomId={roomId} fund={latestFund} />
+
           <Card className="rounded-3xl p-6">
             <h2 className="font-semibold flex items-center gap-2 mb-1">
               <Scale className="h-4 w-4" /> Settle up
@@ -159,9 +190,22 @@ export default function RoomPage() {
                     {m.user_id === user?.id && <span className="text-foreground/45 font-normal"> (you)</span>}
                   </span>
                   {m.role === "admin" && <span className="text-[10px] uppercase tracking-wider font-semibold text-primary">Admin</span>}
+                  {isAdmin && m.role !== "admin" && (
+                    <button
+                      onClick={() => handleRemove(m.user_id, m.name)}
+                      className="p-1.5 rounded-full text-foreground/35 hover:text-danger hover:bg-danger/10"
+                      aria-label={`Remove ${m.name}`}
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
+            <div className="mt-3">
+              <FormMessage error={memberError} />
+            </div>
+            {!isAdmin && <p className="text-xs text-foreground/45 mt-3">Ask the admin for the invite code to add someone.</p>}
           </Card>
         </div>
       </div>
@@ -173,9 +217,19 @@ export default function RoomPage() {
           onAdded={onExpenseAdded}
         />
       </Modal>
-      <Modal open={modal === "invite"} onClose={() => setModal(null)} title={`Invite to ${room.name}`}>
-        <InviteShare roomName={room.name} inviteCode={room.invite_code} />
-      </Modal>
+      {room.invite_code && (
+        <Modal open={modal === "invite"} onClose={() => setModal(null)} title={`Invite to ${room.name}`}>
+          <InviteShare
+            roomName={room.name}
+            inviteCode={room.invite_code}
+            roomId={roomId}
+            onCodeReset={() => {
+              roomQuery.reload();
+              reloadRooms(); // dashboard shows the code too
+            }}
+          />
+        </Modal>
+      )}
     </>
   );
 }

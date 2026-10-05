@@ -1,6 +1,7 @@
 "use client";
 
-import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
+import { useState } from "react";
+import { useGoogleLogin } from "@react-oauth/google";
 import { apiPost, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
@@ -8,31 +9,10 @@ import { TermsNotice } from "@/components/TermsCheckbox";
 
 const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
-// "OR continue with Google" block shared by sign-in and sign-up. Google
-// signs up and signs in through the same endpoint (find-or-create), so a
-// brand-new user must accept the terms here. Pass `agreed` to gate the button
-// on a terms checkbox; omit it and a "by continuing you agree" line is shown instead.
-export function GoogleAuthButton({
-  agreed: checkboxAgreed,
-  onError,
-}: {
-  agreed?: boolean;
-  onError: (message: string | null) => void;
-}) {
-  const completeAuth = useCompleteAuth();
-  const hasCheckbox = checkboxAgreed !== undefined;
-  const agreed = checkboxAgreed ?? true;
-
-  async function handleSuccess(credential: CredentialResponse) {
-    if (!credential.credential) return;
-    onError(null);
-    try {
-      completeAuth(await apiPost<AuthResponse>("/api/auth/google", { idToken: credential.credential, agreedToTerms: agreed }));
-    } catch (err) {
-      onError(errorMessage(err, "Google sign-in failed. Please try again."));
-    }
-  }
-
+// "OR continue with Google" block. Google signs up and signs in through the
+// same endpoint (find-or-create), so a brand-new user accepts the terms by
+// clicking it - the notice underneath says so, and the request records it.
+export function GoogleAuthButton({ onError }: { onError: (message: string | null) => void }) {
   return (
     <>
       <div className="flex items-center gap-3 my-6">
@@ -41,30 +21,55 @@ export function GoogleAuthButton({
         <div className="h-px flex-1 bg-card-border" />
       </div>
 
-      {/* Google's own button is an iframe that can't be disabled and only renders
-          on allowed origins, so until it's usable we show a lookalike placeholder. */}
-      {agreed && googleEnabled ? (
-        <div className="flex justify-center min-h-11">
-          <GoogleLogin
-            onSuccess={handleSuccess}
-            onError={() => onError("Google sign-in was cancelled or failed.")}
-            shape="pill"
-            width="320"
-          />
-        </div>
+      {googleEnabled ? (
+        <GoogleButton onError={onError} />
       ) : (
-        <Button type="button" variant="outline" disabled className="w-full">
-          <GoogleIcon />
-          Continue with Google
-        </Button>
+        <>
+          <Button type="button" variant="outline" disabled className="w-full">
+            <GoogleIcon />
+            Continue with Google
+          </Button>
+          <p className="text-xs text-danger text-center mt-2">Set NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env to enable this.</p>
+        </>
       )}
 
-      {!hasCheckbox && <TermsNotice prefix="By continuing with Google you agree to the" />}
-      {!agreed && <p className="text-xs text-foreground/45 text-center mt-2">Tick the box above to continue with Google.</p>}
-      {agreed && !googleEnabled && (
-        <p className="text-xs text-danger text-center mt-2">Set NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env to enable this.</p>
-      )}
+      <TermsNotice prefix="By continuing with Google you agree to the" />
     </>
+  );
+}
+
+// Split out because useGoogleLogin needs the GoogleOAuthProvider, which only
+// exists when a client ID is configured (see providers.tsx).
+function GoogleButton({ onError }: { onError: (message: string | null) => void }) {
+  const completeAuth = useCompleteAuth();
+  const [loading, setLoading] = useState(false);
+
+  // Our own button opens Google's consent popup; Google hands back an access
+  // token, which the backend verifies with Google before signing the user in.
+  const login = useGoogleLogin({
+    onSuccess: async ({ access_token }) => {
+      setLoading(true);
+      onError(null);
+      try {
+        completeAuth(await apiPost<AuthResponse>("/api/auth/google", { accessToken: access_token, agreedToTerms: true }));
+      } catch (err) {
+        onError(errorMessage(err, "Google sign-in failed. Please try again."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => onError("Google sign-in failed. Please try again."),
+    // Closing the popup isn't an error worth shouting about.
+    onNonOAuthError: (err) => {
+      if (err.type !== "popup_closed") onError("Couldn't open the Google sign-in window. Allow pop-ups and try again.");
+    },
+  });
+
+  return (
+    <Button type="button" variant="outline" loading={loading} onClick={() => login()} className="w-full">
+      <GoogleIcon />
+      {loading ? "Signing in..." : "Continue with Google"}
+    </Button>
   );
 }
 

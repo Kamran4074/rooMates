@@ -13,7 +13,7 @@ function limiter(windowMinutes: number, limit: number, message: string, extra: P
     limit,
     standardHeaders: "draft-8",
     legacyHeaders: false,
-    message: { message },
+    message: { success: false, message },
     ...extra,
   });
 }

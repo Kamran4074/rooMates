@@ -39,7 +39,7 @@ export function TermsCheckbox({
   );
 }
 
-// Passive consent line for places without a checkbox (e.g. Google on the sign-in page).
+// Passive consent line for actions without a checkbox (e.g. Continue with Google).
 export function TermsNotice({ prefix }: { prefix: string }) {
   return (
     <p className="text-xs text-foreground/50 text-center mt-3">

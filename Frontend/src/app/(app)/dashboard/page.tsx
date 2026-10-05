@@ -48,10 +48,10 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid lg:grid-cols-3 gap-6 mb-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
         <Card className="lg:col-span-2 p-6 rounded-3xl">
           <h2 className="font-semibold mb-5">Across all your rooms</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard icon={<ArrowDownLeft className="h-4 w-4" />} tone="success" label="You are owed" value={rupees(totalOwedToMe)} />
             <StatCard icon={<ArrowUpRight className="h-4 w-4" />} tone="danger" label="You owe" value={rupees(totalIOwe)} />
             <StatCard icon={<HomeIcon className="h-4 w-4" />} tone="primary" label="Active rooms" value={String(rooms.length)} />
@@ -89,7 +89,7 @@ export default function DashboardPage() {
           {!loaded ? (
             <p className="text-foreground/50">Loading rooms...</p>
           ) : (
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {rooms.map((room) => {
                 const net = room.my_net_paise;
                 return (
@@ -110,13 +110,18 @@ export default function DashboardPage() {
                         <span className="text-foreground/55">All settled up</span>
                       )}
                     </p>
-                    <button
-                      onClick={() => copy(room.invite_code, room.id)}
-                      className="mt-auto flex items-center gap-1.5 text-xs text-foreground/50 hover:text-primary"
-                    >
-                      {copiedKey === room.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copiedKey === room.id ? "Copied!" : `Invite code: ${room.invite_code}`}
-                    </button>
+                    {/* Only the admin is sent the code - members can't pass it on. */}
+                    {room.invite_code ? (
+                      <button
+                        onClick={() => copy(room.invite_code!, room.id)}
+                        className="mt-auto flex items-center gap-1.5 text-xs text-foreground/50 hover:text-primary"
+                      >
+                        {copiedKey === room.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedKey === room.id ? "Copied!" : `Invite code: ${room.invite_code}`}
+                      </button>
+                    ) : (
+                      <p className="mt-auto text-xs text-foreground/45">Member</p>
+                    )}
                   </Card>
                 );
               })}
@@ -136,7 +141,7 @@ function GetStarted({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => 
   return (
     <Card className="p-8 rounded-3xl bg-accent/6">
       <h2 className="text-xl font-semibold mb-6">Get started with RooMates</h2>
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {steps.map((s) => (
           <div key={s.n} className="flex gap-4 items-start bg-card rounded-2xl border border-card-border p-5">
             <span className="text-5xl font-extrabold text-primary leading-none">{s.n}</span>

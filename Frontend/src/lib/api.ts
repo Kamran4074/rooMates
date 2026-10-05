@@ -14,12 +14,31 @@ export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  const data = await res.json().catch(() => null);
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface Page<T> {
+  items: T[];
+  pagination: Pagination;
+}
+
+// Every API response is { success, message?, data, pagination? } (errors:
+// { success: false, message }). It's unwrapped here, once, so callers just
+// get `data`. A 204 has no body, hence the catch.
+async function readBody(res: Response) {
+  const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError(data?.message ?? `Request failed (${res.status})`, res.status);
+    throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status);
   }
-  return data as T;
+  return body;
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  return (await readBody(res))?.data as T;
 }
 
 function authHeaders(): Record<string, string> {
@@ -62,7 +81,7 @@ async function tryRefreshAccessToken(): Promise<boolean> {
           if (res.status === 400 || res.status === 401) logout();
           return false;
         }
-        const data = await res.json();
+        const { data } = await res.json();
         setAuth(data.accessToken, data.refreshToken, data.user);
         return true;
       } catch {
@@ -93,6 +112,12 @@ export async function apiAuthGet<T>(path: string): Promise<T> {
   return handleResponse<T>(res);
 }
 
+// For paginated list endpoints, which also send `pagination`.
+export async function apiAuthGetPage<T>(path: string): Promise<Page<T>> {
+  const body = await readBody(await authFetch(path, { method: "GET" }));
+  return { items: body.data, pagination: body.pagination };
+}
+
 async function authSend<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
   const res = await authFetch(path, {
     method,
@@ -104,3 +129,7 @@ async function authSend<T>(method: "POST" | "PATCH", path: string, body: unknown
 
 export const apiAuthPost = <T>(path: string, body: unknown) => authSend<T>("POST", path, body);
 export const apiAuthPatch = <T>(path: string, body: unknown) => authSend<T>("PATCH", path, body);
+
+export async function apiAuthDelete(path: string): Promise<void> {
+  await handleResponse(await authFetch(path, { method: "DELETE" }));
+}

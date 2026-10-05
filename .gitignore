@@ -35,4 +35,6 @@ coverage/
 
 # Local reference screenshots (not part of the app)
 /pic/
+
+# Personal learning notes - not published
 /docs/

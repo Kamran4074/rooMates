@@ -48,7 +48,7 @@ export function OtpInput({ value, onChange }: { value: string; onChange: (value:
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={handlePaste}
-          className="w-12 h-14 text-center text-xl font-semibold rounded-lg border border-card-border bg-background outline-none focus:border-primary"
+          className="flex-1 min-w-0 max-w-12 h-14 text-center text-xl font-semibold rounded-lg border border-card-border bg-background outline-none focus:border-primary"
         />
       ))}
     </div>

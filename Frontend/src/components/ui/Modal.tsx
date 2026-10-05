@@ -26,7 +26,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={title} className="relative w-full max-w-md bg-card rounded-3xl shadow-2xl p-7">
+      <div role="dialog" aria-modal="true" aria-label={title} className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card rounded-3xl shadow-2xl p-5 sm:p-7">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold">{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-foreground/5" aria-label="Close">

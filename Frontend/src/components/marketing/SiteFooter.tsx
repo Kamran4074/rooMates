@@ -32,7 +32,7 @@ const columns = [
 export function SiteFooter() {
   return (
     <footer className="border-t border-card-border bg-card mt-auto">
-      <div className="max-w-6xl mx-auto px-6 py-12 grid gap-10 md:grid-cols-4">
+      <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-1 gap-10 md:grid-cols-4">
         <div>
           <Link href="/" className="flex items-center gap-2 font-bold text-lg mb-3">
             <Logo size={28} />

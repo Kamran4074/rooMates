@@ -7,6 +7,8 @@ export interface AuthUser {
   name: string;
   picture?: string;
   onboardingCompleted: boolean;
+  /** For showing admin UI only - the server checks the role on every admin request. */
+  role?: "user" | "super_admin";
 }
 
 interface AuthState {

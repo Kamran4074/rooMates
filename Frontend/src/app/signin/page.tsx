@@ -10,7 +10,6 @@ import { TextField } from "@/components/ui/TextField";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
-import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 
 export default function SignInPage() {
   useRedirectIfAuthenticated();
@@ -75,14 +74,21 @@ export default function SignInPage() {
         </Button>
       </form>
 
-      <GoogleAuthButton onError={setError} />
-
-      <p className="text-sm text-foreground/60 mt-8">
-        Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-primary font-medium">
-          Sign Up
-        </Link>
-      </p>
+      <div className="text-sm text-foreground/60 mt-6 flex flex-col gap-2">
+        <p>
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="text-primary font-medium">
+            Sign Up
+          </Link>
+        </p>
+        {/* Google accounts have no password; the sign-up page's Google button signs existing users in too. */}
+        <p>
+          Signed up with Google?{" "}
+          <Link href="/signup" className="text-primary font-medium">
+            Continue with Google
+          </Link>
+        </p>
+      </div>
     </AuthShell>
   );
 }

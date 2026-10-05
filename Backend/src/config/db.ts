@@ -13,6 +13,31 @@ pool.on("error", (err) => {
   logger.error("Unexpected error on idle Postgres client", { error: err.message });
 });
 
+// Owner connection - BYPASSES RLS. Only the super-admin module uses it, and
+// only behind requireSuperAdmin, for the cross-tenant reads moderation needs
+// (every user, every listing, any room). Kept small: admin traffic is tiny.
+export const adminPool = new Pool({ connectionString: env.DATABASE_URL, max: 3 });
+
+adminPool.on("error", (err) => {
+  logger.error("Unexpected error on idle admin Postgres client", { error: err.message });
+});
+
+// A plain transaction on the admin connection (no RLS context to set).
+export async function withAdminTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await adminPool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function checkDbConnection(): Promise<boolean> {
   try {
     await pool.query("SELECT 1");

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
@@ -15,6 +15,12 @@ const envSchema = z.object({
     .transform((s) => s.split(",").map((o) => o.trim()).filter(Boolean))
     .pipe(z.array(z.string().url()).min(1)),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  // Apply pending migrations at startup (see config/migrate.ts). Set to false
+  // if a deploy pipeline runs `npm run migrate:up` as its own release step.
+  MIGRATE_ON_START: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
   APP_DATABASE_URL: z.string().min(1, "APP_DATABASE_URL is required"),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default("15m"),
@@ -25,6 +31,10 @@ const envSchema = z.object({
   // Must be a sender verified in Brevo (Settings -> Senders), or sends are rejected.
   EMAIL_FROM_ADDRESS: z.string().email().default("hello.roomatess@gmail.com"),
   CONTACT_INBOX: z.string().email().optional(),
+  // Listing photos (optional - without these, listings work but photo upload is off).
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

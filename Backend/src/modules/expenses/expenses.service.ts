@@ -1,23 +1,20 @@
 import crypto from "crypto";
+import { PoolClient } from "pg";
 import { withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
 import { CreateExpenseInput, MonthExpensesQuery } from "./expenses.schema";
 import { splitEqually, simplifyDebts, Balance } from "../settlement/settlement.algorithm";
-
-const toPaise = (rupees: number) => Math.round(rupees * 100);
+import { toPaise } from "../../utils/money";
+import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
+import { getMemberIds, requireMember } from "../rooms/rooms.repository";
 
 export async function createExpense(userId: string, roomId: string, input: CreateExpenseInput) {
   const amountPaise = toPaise(input.amount);
   const expenseId = crypto.randomUUID();
 
   return withUserContext(userId, async (client) => {
-    // RLS already hides rooms the caller isn't in, so an empty result means
-    // "not your room" (or an empty room) - never a way to add to someone else's.
-    const members = await client.query<{ user_id: string }>("SELECT user_id FROM room_members WHERE room_id = $1", [roomId]);
-    const memberIds = new Set(members.rows.map((m) => m.user_id));
-    if (memberIds.size === 0) {
-      throw new AppError("Room not found", 404);
-    }
+    // RLS hides rooms the caller isn't in, so this 404s for someone else's room.
+    const memberIds = new Set(await getMemberIds(client, roomId));
 
     let splits: { userId: string; sharePaise: number }[];
     if (input.splitType === "equal") {
@@ -60,58 +57,69 @@ export async function createExpense(userId: string, roomId: string, input: Creat
   });
 }
 
-export async function listExpenses(userId: string, roomId: string) {
+export async function listExpenses(userId: string, roomId: string, params: PageParams) {
   return withUserContext(userId, async (client) => {
-    const expenses = await client.query(
-      `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.created_at, u.name AS paid_by_name
+    await requireMember(client, roomId, userId);
+    const { limit, offset } = toLimitOffset(params);
+    const result = await client.query(
+      // LEFT JOIN: once someone leaves the room, RLS hides their user row, but
+      // the expenses they paid for are still part of the room's history.
+      `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.created_at,
+              COALESCE(u.name, 'Former member') AS paid_by_name,
+              COUNT(*) OVER() AS total_count
        FROM expenses e
-       JOIN users u ON u.id = e.paid_by
+       LEFT JOIN users u ON u.id = e.paid_by
        WHERE e.room_id = $1
-       ORDER BY e.created_at DESC`,
-      [roomId]
+       ORDER BY e.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [roomId, limit, offset]
     );
-    return expenses.rows;
+    return paginate(result.rows, params);
   });
 }
 
 export async function getRoomBalances(userId: string, roomId: string) {
-  return withUserContext(userId, async (client) => {
-    const members = await client.query<{ user_id: string; name: string }>(
-      `SELECT rm.user_id, u.name FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id = $1`,
-      [roomId]
-    );
+  return withUserContext(userId, (client) => computeRoomBalances(client, roomId));
+}
 
-    const paidTotals = await client.query<{ paid_by: string; total: string }>(
-      "SELECT paid_by, SUM(amount_paise) AS total FROM expenses WHERE room_id = $1 GROUP BY paid_by",
-      [roomId]
-    );
-    const owedTotals = await client.query<{ user_id: string; total: string }>(
-      `SELECT es.user_id, SUM(es.share_paise) AS total
-       FROM expense_splits es
-       JOIN expenses e ON e.id = es.expense_id
-       WHERE e.room_id = $1
-       GROUP BY es.user_id`,
-      [roomId]
-    );
+// Takes a client so it runs under whoever's context the caller set up: a
+// member's (RLS-scoped) in getRoomBalances, the super admin's in the admin module.
+export async function computeRoomBalances(client: PoolClient, roomId: string) {
+  const members = await client.query<{ user_id: string; name: string }>(
+    `SELECT rm.user_id, u.name FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id = $1`,
+    [roomId]
+  );
 
-    const paidMap = new Map(paidTotals.rows.map((r) => [r.paid_by, Number(r.total)]));
-    const owedMap = new Map(owedTotals.rows.map((r) => [r.user_id, Number(r.total)]));
+  const paidTotals = await client.query<{ paid_by: string; total: string }>(
+    "SELECT paid_by, SUM(amount_paise) AS total FROM expenses WHERE room_id = $1 GROUP BY paid_by",
+    [roomId]
+  );
+  const owedTotals = await client.query<{ user_id: string; total: string }>(
+    `SELECT es.user_id, SUM(es.share_paise) AS total
+     FROM expense_splits es
+     JOIN expenses e ON e.id = es.expense_id
+     WHERE e.room_id = $1
+     GROUP BY es.user_id`,
+    [roomId]
+  );
 
-    const balances: (Balance & { name: string })[] = members.rows.map((m) => ({
-      userId: m.user_id,
-      name: m.name,
-      netPaise: (paidMap.get(m.user_id) ?? 0) - (owedMap.get(m.user_id) ?? 0),
-    }));
+  const paidMap = new Map(paidTotals.rows.map((r) => [r.paid_by, Number(r.total)]));
+  const owedMap = new Map(owedTotals.rows.map((r) => [r.user_id, Number(r.total)]));
 
-    const nameByUserId = new Map(members.rows.map((m) => [m.user_id, m.name]));
-    const settlements = simplifyDebts(balances).map((t) => ({
-      ...t,
-      fromName: nameByUserId.get(t.fromUserId),
-      toName: nameByUserId.get(t.toUserId),
-    }));
+  const balances: (Balance & { name: string })[] = members.rows.map((m) => ({
+    userId: m.user_id,
+    name: m.name,
+    netPaise: (paidMap.get(m.user_id) ?? 0) - (owedMap.get(m.user_id) ?? 0),
+  }));
 
-    return { balances, settlements };
-  });
+  const nameByUserId = new Map(members.rows.map((m) => [m.user_id, m.name]));
+  const settlements = simplifyDebts(balances).map((t) => ({
+    ...t,
+    fromName: nameByUserId.get(t.fromUserId),
+    toName: nameByUserId.get(t.toUserId),
+  }));
+
+  return { balances, settlements };
 }
 
 // Months are cut in Indian time, not UTC - otherwise an expense added at
@@ -134,12 +142,13 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
       room_name: string;
       room_type: string;
     }>(
-      `SELECT e.id, e.description, e.amount_paise, e.created_at, e.paid_by, u.name AS paid_by_name,
+      `SELECT e.id, e.description, e.amount_paise, e.created_at, e.paid_by,
+              COALESCE(u.name, 'Former member') AS paid_by_name,
               r.id AS room_id, r.name AS room_name, r.type AS room_type,
               COALESCE(es.share_paise, 0) AS my_share_paise
        FROM expenses e
        JOIN rooms r ON r.id = e.room_id
-       JOIN users u ON u.id = e.paid_by
+       LEFT JOIN users u ON u.id = e.paid_by
        LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
        WHERE e.created_at >= ($2::date)::timestamp AT TIME ZONE '${APP_TIMEZONE}'
          AND e.created_at <  ($2::date + interval '1 month')::timestamp AT TIME ZONE '${APP_TIMEZONE}'

@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
-import { Table, Th, Td } from "@/components/ui/Table";
+import { Table, Th, Td, MobileList } from "@/components/ui/Table";
 import { FormMessage } from "@/components/ui/FormMessage";
 
 export default function HistoryPage() {
@@ -22,6 +22,7 @@ export default function HistoryPage() {
     `/api/expenses/monthly-summary${roomId ? `?roomId=${roomId}` : ""}`
   );
   const months = data ?? [];
+  const monthHref = (month: string) => `/expenses?month=${month}${roomId ? `&room=${roomId}` : ""}`;
 
   const allTime = months.reduce(
     (acc, m) => ({ total: acc.total + m.totalPaise, paid: acc.paid + m.iPaidPaise, net: acc.net + m.netPaise }),
@@ -68,7 +69,29 @@ export default function HistoryPage() {
         ) : months.length === 0 ? (
           <p className="text-foreground/55 py-12 text-center">No expenses yet — your monthly history will show up here.</p>
         ) : (
-          <Table>
+          <>
+          <MobileList>
+            {months.map((m) => (
+              <li key={m.month}>
+                <Link href={monthHref(m.month)} className="py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">{monthLabel(m.month)}</p>
+                    <p className="text-xs text-foreground/50">
+                      {m.expenseCount} {m.expenseCount === 1 ? "expense" : "expenses"} · {rupees(m.totalPaise)} total
+                    </p>
+                    <p className="text-xs text-foreground/50">
+                      You paid {rupees(m.iPaidPaise)} · your share {rupees(m.mySharePaise)}
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold ${m.netPaise > 0 ? "text-success" : m.netPaise < 0 ? "text-danger" : "text-foreground/50"}`}>
+                    {m.netPaise === 0 ? "—" : `${m.netPaise > 0 ? "+" : "−"}${rupees(m.netPaise)}`}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-foreground/40 shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </MobileList>
+          <Table className="hidden sm:block">
             <thead>
               <tr>
                 <Th>Month</Th>
@@ -82,7 +105,7 @@ export default function HistoryPage() {
             </thead>
             <tbody>
               {months.map((m) => {
-                const href = `/expenses?month=${m.month}${roomId ? `&room=${roomId}` : ""}`;
+                const href = monthHref(m.month);
                 return (
                   <tr key={m.month} className="hover:bg-foreground/2">
                     <Td className="font-medium whitespace-nowrap">
@@ -109,6 +132,7 @@ export default function HistoryPage() {
               })}
             </tbody>
           </Table>
+          </>
         )}
       </Card>
     </>

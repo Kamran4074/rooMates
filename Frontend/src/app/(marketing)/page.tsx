@@ -100,7 +100,7 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="bg-linear-to-b from-primary/10 to-background">
-        <div className="max-w-6xl mx-auto px-6 py-16 lg:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div className="max-w-6xl mx-auto px-6 py-16 lg:py-24 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>
             <p className="inline-block text-sm font-medium px-3 py-1 rounded-full bg-accent/15 text-accent mb-5">
               Made for flatmates & trip squads
@@ -137,7 +137,7 @@ export default function HomePage() {
       </section>
 
       <Section id="features" eyebrow="Features" title="Everything a shared flat needs" subtitle="No spreadsheets, no group-chat arguments, no forgotten IOUs.">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {features.map(({ icon: Icon, title, desc }) => (
             <Card key={title} className="p-6">
               <div className="h-11 w-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-4">
@@ -151,7 +151,7 @@ export default function HomePage() {
       </Section>
 
       <Section id="how-it-works" eyebrow="How it works" title="Three steps to a settled flat" className="bg-card rounded-3xl">
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {steps.map(({ icon: Icon, title, desc }, i) => (
             <div key={title} className="text-center">
               <div className="h-14 w-14 mx-auto rounded-2xl bg-accent/15 text-accent flex items-center justify-center mb-4">
@@ -170,7 +170,7 @@ export default function HomePage() {
         title="3 roommates, 1 month, just 2 payments"
         subtitle="Everyone paid for different things. The fair share is ₹1,435 each — here's the simplest way to square up."
       >
-        <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           <Card className="p-6">
             <h3 className="font-semibold mb-4">What everyone paid</h3>
             <ul className="flex flex-col gap-3">

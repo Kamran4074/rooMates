@@ -4,8 +4,16 @@ export interface Room {
   id: string;
   name: string;
   type: RoomType;
-  invite_code: string;
+  /** Only sent to the room admin; null for everyone else. */
+  invite_code: string | null;
+  my_role: "admin" | "member";
   created_at: string;
+}
+
+/** GET /api/rooms/:id also returns the room's totals. */
+export interface RoomDetail extends Room {
+  expense_count: number;
+  total_spent_paise: number;
 }
 
 /** A room as returned by GET /api/rooms, with the caller's balance in it. */
@@ -48,6 +56,143 @@ export interface Settlement {
 export interface RoomBalances {
   balances: Balance[];
   settlements: Settlement[];
+}
+
+/** A pooled-money fund ("kitty") as listed by GET /api/rooms/:id/funds. All amounts in paise. */
+export interface Fund {
+  id: string;
+  name: string;
+  perMemberPaise: number;
+  collectorId: string;
+  status: "open" | "closed";
+  closedAt: string | null;
+  createdAt: string;
+  expectedPaise: number;
+  /** Confirmed money only. */
+  collectedPaise: number;
+  /** Recorded by members, not yet confirmed by the collector. */
+  awaitingConfirmationPaise: number;
+  spentPaise: number;
+  balancePaise: number;
+  pendingPaise: number;
+}
+
+export interface FundMember {
+  userId: string;
+  name: string;
+  picture: string | null;
+  paidPaise: number;
+  awaitingPaise: number;
+  pendingPaise: number;
+}
+
+/** contribution/spend while open; refund (collector -> member) and collection (member -> collector) when closed. */
+export interface FundEntry {
+  id: string;
+  kind: "contribution" | "spend" | "refund" | "collection";
+  member_id: string | null;
+  member_name: string | null;
+  amount_paise: number;
+  note: string | null;
+  /** Money actually changed hands: payment confirmed by the collector, or settlement done. */
+  confirmed: boolean;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface FundDetail extends Fund {
+  collector: { id: string; name: string; picture: string | null };
+  /** I'm the collector or the room admin. */
+  canManage: boolean;
+  members: FundMember[];
+  entries: FundEntry[];
+}
+
+export interface FundClosePreview {
+  spentPaise: number;
+  sharePerPersonPaise: number;
+  unconfirmedPayments: number;
+  lines: { userId: string; name: string; paidPaise: number; sharePaise: number; netPaise: number; isCollector: boolean }[];
+  transfers: { userId: string; name: string; kind: "refund" | "collection"; amountPaise: number }[];
+}
+
+// ---------------- Listings ----------------
+
+export type ListingStatus = "draft" | "pending" | "published" | "rejected" | "rented" | "removed";
+export type RoomTypeOption = "private_room" | "shared_room" | "entire_flat";
+export type Furnishing = "furnished" | "semi_furnished" | "unfurnished";
+export type RequestStatus = "pending" | "accepted" | "rejected";
+
+/** A listing as shown in lists/cards. Rent in paise. */
+export interface ListingCard {
+  id: string;
+  title: string;
+  rent_paise: number;
+  room_type: RoomTypeOption;
+  furnishing: Furnishing;
+  locality: string;
+  city: string;
+  pincode: string;
+  available_from: string;
+  status: ListingStatus;
+  is_mine: boolean;
+  cover_url: string | null;
+  created_at: string;
+  distance_km?: number;
+  pending_requests?: number;
+  rejection_reason?: string | null;
+}
+
+export interface ListingImage {
+  id: string;
+  url: string;
+  is_primary: boolean;
+}
+
+export interface ListingDetail extends Omit<ListingCard, "cover_url"> {
+  description: string;
+  amenities: string[];
+  state: string;
+  latitude: number | null;
+  longitude: number | null;
+  rejection_reason: string | null;
+  updated_at: string;
+  images: ListingImage[];
+  /** Owner only. */
+  request_counts?: Partial<Record<RequestStatus, number>>;
+  /** Everyone else: whether they've already sent a request. */
+  my_request_status?: RequestStatus | null;
+}
+
+export interface SentRequest {
+  id: string;
+  status: RequestStatus;
+  message: string | null;
+  created_at: string;
+  listing_id: string;
+  listing_title: string;
+  listing_city: string;
+  listing_locality: string;
+  listing_rent_paise: number;
+  listing_status: ListingStatus;
+  owner_name: string | null;
+  owner_phone: string | null;
+  owner_email: string | null;
+}
+
+export interface ReceivedRequest {
+  id: string;
+  status: RequestStatus;
+  message: string | null;
+  created_at: string;
+  listing_id: string;
+  listing_title: string;
+  listing_status: ListingStatus;
+  requester_name: string | null;
+  requester_picture: string | null;
+  requester_phone: string | null;
+  requester_email: string | null;
 }
 
 export interface MyExpense {

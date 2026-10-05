@@ -3,6 +3,8 @@ import { env } from "./env";
 
 export const logger = winston.createLogger({
   level: env.NODE_ENV === "production" ? "info" : "debug",
+  // Jest sets NODE_ENV=test; request logs would bury the test output.
+  silent: env.NODE_ENV === "test",
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),

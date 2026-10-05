@@ -30,7 +30,7 @@ export default function AboutPage() {
       </div>
 
       <Section title="What we believe">
-        <div className="grid md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {values.map((v) => (
             <Card key={v.title} className="p-6">
               <h3 className="font-semibold text-lg mb-2">{v.title}</h3>

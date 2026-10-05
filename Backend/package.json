@@ -11,7 +11,9 @@
     "migrate:create": "npm run migrate -- create",
     "migrate:up": "npm run migrate -- up",
     "migrate:down": "npm run migrate -- down",
-    "test": "jest"
+    "make-admin": "tsx scripts/make-admin.ts",
+    "test": "jest",
+    "test:api": "jest -c jest.api.config.js --runInBand"
   },
   "keywords": [],
   "type": "commonjs",
@@ -24,6 +26,7 @@
     "express-rate-limit": "^8.7.0",
     "express-slow-down": "^3.1.1",
     "google-auth-library": "^11.1.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.12.1",
     "node-pg-migrate": "^9.0.0",

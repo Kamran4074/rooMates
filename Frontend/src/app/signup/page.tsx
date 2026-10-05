@@ -118,7 +118,7 @@ export default function SignUpPage() {
         </Button>
       </form>
 
-      <GoogleAuthButton agreed={agreed} onError={setError} />
+      <GoogleAuthButton onError={setError} />
 
       <p className="text-sm text-foreground/60 mt-8">
         Already have an account?{" "}

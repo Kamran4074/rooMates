@@ -25,39 +25,57 @@ export interface AuthenticatedUser {
   name: string;
   picture?: string;
   onboardingCompleted: boolean;
+  role?: PlatformRole;
 }
+
+export type PlatformRole = "user" | "super_admin";
 
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
 }
 
-export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfile> {
+const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
+
+// The frontend uses Google's popup token flow (our own button opens it), which
+// yields an ACCESS token rather than an ID token. Unlike an ID token it isn't
+// self-verifying, so we ask Google about it.
+export async function verifyGoogleAccessToken(accessToken: string): Promise<GoogleProfile> {
   if (!googleClient) {
     throw new AppError("Google OAuth is not configured on the server", 500);
   }
 
-  const ticket = await googleClient.verifyIdToken({
-    idToken,
-    audience: env.GOOGLE_CLIENT_ID,
-  });
+  let info;
+  try {
+    info = await googleClient.getTokenInfo(accessToken);
+  } catch {
+    throw new AppError("Invalid Google token", 401);
+  }
 
-  const payload = ticket.getPayload();
-  if (!payload || !payload.sub || !payload.email) {
+  // The critical check: the token must have been issued to OUR client. Any
+  // other site using Google sign-in also receives access tokens for its
+  // users; without this, it could replay one here and log in as that user.
+  if (info.aud !== env.GOOGLE_CLIENT_ID || !info.sub || !info.email) {
     throw new AppError("Invalid Google token", 401);
   }
   // Google sign-in links to an existing account by email, so the email must
-  // be one Google has actually confirmed (always true for Gmail, not
-  // guaranteed for every Google account).
-  if (!payload.email_verified) {
+  // be one Google has actually confirmed.
+  if (!info.email_verified) {
     throw new AppError("Your Google account's email isn't verified", 401);
   }
 
+  // Name and photo aren't in tokeninfo. They're cosmetic, so a failure here
+  // falls back to the email rather than failing the sign-in.
+  type UserInfo = { name?: string; picture?: string };
+  const profile: UserInfo = await fetch(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } })
+    .then((res) => (res.ok ? (res.json() as Promise<UserInfo>) : {}))
+    .catch(() => ({}));
+
   return {
-    googleId: payload.sub,
-    email: payload.email.toLowerCase(),
-    name: payload.name ?? payload.email,
-    picture: payload.picture,
+    googleId: info.sub,
+    email: info.email.toLowerCase(),
+    name: profile.name ?? info.email,
+    picture: profile.picture,
   };
 }
 
@@ -249,8 +267,25 @@ export async function issueRefreshToken(userId: string): Promise<string> {
   return rawToken;
 }
 
-export async function issueTokenPair(user: AuthenticatedUser): Promise<TokenPair> {
-  return { accessToken: issueAccessToken(user), refreshToken: await issueRefreshToken(user.userId) };
+// The one gate every sign-in passes through (password, Google, verify-email,
+// reset-password), so a suspended account can't get a session by any route.
+// Returns the role so the client can show admin UI - the server still checks
+// the role again on every admin request.
+export async function assertActiveAccount(userId: string): Promise<PlatformRole> {
+  const { rows } = await withUserContext(userId, (client) =>
+    client.query<{ role: PlatformRole; suspended_at: Date | null }>(
+      "SELECT role, suspended_at FROM users WHERE id = $1",
+      [userId]
+    )
+  );
+  if (!rows[0]) throw new AppError("Account not found", 401);
+  if (rows[0].suspended_at) throw new AppError("This account has been suspended. Contact support.", 403);
+  return rows[0].role;
+}
+
+export async function issueTokenPair(user: AuthenticatedUser): Promise<TokenPair & { role: PlatformRole }> {
+  const role = await assertActiveAccount(user.userId);
+  return { accessToken: issueAccessToken(user), refreshToken: await issueRefreshToken(user.userId), role };
 }
 
 // Rotation: the presented refresh token is revoked and a brand new one issued
@@ -277,7 +312,9 @@ export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & 
       name: string;
       picture: string | null;
       onboarding_completed: boolean;
-    }>("SELECT id, organization_id, email, name, picture, onboarding_completed FROM users WHERE id = $1", [userId]);
+    }>("SELECT id, organization_id, email, name, picture, onboarding_completed FROM users WHERE id = $1", [
+      userId,
+    ]);
     const u = rows[0];
     return {
       userId: u.id,
@@ -289,8 +326,10 @@ export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & 
     } satisfies AuthenticatedUser;
   });
 
-  const tokens = await issueTokenPair(user);
-  return { ...tokens, user };
+  // issueTokenPair re-checks suspension: the old token is already revoked
+  // above, so a suspended user is fully signed out here.
+  const { role, ...tokens } = await issueTokenPair(user);
+  return { ...tokens, user: { ...user, role } };
 }
 
 export async function revokeRefreshToken(rawToken: string): Promise<void> {

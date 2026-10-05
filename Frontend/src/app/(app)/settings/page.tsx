@@ -62,7 +62,7 @@ function ProfileForm({ me }: { me: Me }) {
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <TextField label="Full name" required value={name} onChange={(e) => setName(e.target.value)} />
         <PhoneField value={phone} onChange={setPhone} />
         <div className="sm:col-span-2">

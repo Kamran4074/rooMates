@@ -15,7 +15,7 @@ const agreedToTerms = z.literal(true, { error: "You must accept the Terms and Co
 
 // Google users may never see the signup form, so the Google button is where they accept the terms.
 export const googleLoginSchema = z.object({
-  idToken: z.string().min(1, "idToken is required"),
+  accessToken: z.string().min(1, "accessToken is required"),
   agreedToTerms,
 });
 

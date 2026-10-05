@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiAuthGet, errorMessage } from "./api";
+import { apiAuthGet, apiAuthGetPage, errorMessage, Page } from "./api";
 
 interface QueryResult<T> {
   key: string;
@@ -16,7 +16,11 @@ interface QueryResult<T> {
 //  - no setState runs synchronously inside the effect; "loading" is derived
 //    from whether the stored result matches the current request.
 // `refreshKey` refetches the same path when something it depends on changes.
-export function useApiQuery<T>(path: string | null, refreshKey: string | number = "") {
+export function useApiQuery<T>(
+  path: string | null,
+  refreshKey: string | number = "",
+  fetcher: (path: string) => Promise<T> = apiAuthGet
+) {
   const key = path === null ? null : `${path}#${refreshKey}`;
   const [result, setResult] = useState<QueryResult<T> | null>(null);
   const [version, setVersion] = useState(0);
@@ -24,13 +28,15 @@ export function useApiQuery<T>(path: string | null, refreshKey: string | number 
   useEffect(() => {
     if (path === null || key === null) return;
     let active = true;
-    apiAuthGet<T>(path).then(
+    fetcher(path).then(
       (data) => active && setResult({ key, data }),
       (err) => active && setResult({ key, error: errorMessage(err, "Something went wrong") })
     );
     return () => {
       active = false;
     };
+    // `fetcher` is a module-level function, never a new one per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, key, version]);
 
   // After reload() the previous data stays visible until fresh data arrives.
@@ -41,4 +47,9 @@ export function useApiQuery<T>(path: string | null, refreshKey: string | number 
     loading: key !== null && current === null,
     reload: () => setVersion((v) => v + 1),
   };
+}
+
+// Same, for paginated endpoints: data is { items, pagination }.
+export function usePagedQuery<T>(path: string | null, refreshKey: string | number = "") {
+  return useApiQuery<Page<T>>(path, refreshKey, apiAuthGetPage<T>);
 }
