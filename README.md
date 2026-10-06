@@ -339,7 +339,7 @@ The API tests cover registration/verification/login, refresh-token rotation, roo
 
 The app is designed for free hosting: **Vercel** (frontend) + **Render** (backend) + **Neon** (database) + **Cloudinary** (photos).
 
-1. **Render** (Web Service, root `Backend`): build `npm install && npm run build`, start `npm start`. Set every backend variable above, with `NODE_ENV=production`, `TRUST_PROXY=1`, `CORS_ORIGIN=https://<your-app>.vercel.app`. Migrations run automatically at startup (or set `MIGRATE_ON_START=false` and run `npm run migrate:up` as a pre-deploy step).
+1. **Render** via the Blueprint in [render.yaml](render.yaml) (Dashboard → New → Blueprint → this repo). It defines the `roomates-api` web service in Singapore (same region as the database), the build/start commands, the `/api/health` check, and auto-deploy only after CI passes. Render generates `JWT_SECRET` itself. Keys marked `sync: false` (database URLs, Brevo, Google client ID, Cloudinary) are asked for once at creation and are never committed. Migrations run automatically at startup (or set `MIGRATE_ON_START=false` and run `npm run migrate:up` as a pre-deploy step).
 2. **Vercel** (root `Frontend`): set `NEXT_PUBLIC_API_URL` (the Render URL), `NEXT_PUBLIC_SITE_URL` (the Vercel URL), `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 3. **Google Cloud Console:** add the Vercel URL to *Authorized JavaScript origins* and publish the OAuth consent screen.
 
