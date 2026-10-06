@@ -26,7 +26,9 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   }
 
   try {
-    const payload = jwt.verify(header.slice("Bearer ".length), env.JWT_SECRET) as AuthPayload;
+    // Pin the algorithm we sign with, so a token can't pick its own
+    // (the classic "alg: none" / algorithm-confusion attacks).
+    const payload = jwt.verify(header.slice("Bearer ".length), env.JWT_SECRET, { algorithms: ["HS256"] }) as AuthPayload;
     req.auth = payload;
     next();
   } catch {

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { PoolClient } from "pg";
 import { withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
-import { CreateExpenseInput, MonthExpensesQuery } from "./expenses.schema";
+import { CreateExpenseInput, MonthExpensesQuery, todayInIndia } from "./expenses.schema";
 import { splitEqually, simplifyDebts, Balance } from "../settlement/settlement.algorithm";
 import { toPaise } from "../../utils/money";
 import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
@@ -15,6 +15,12 @@ export async function createExpense(userId: string, roomId: string, input: Creat
   return withUserContext(userId, async (client) => {
     // RLS hides rooms the caller isn't in, so this 404s for someone else's room.
     const memberIds = new Set(await getMemberIds(client, roomId));
+
+    // Anyone in the room can record that someone else paid ("Bhavya bought the
+    // milk"), like in Splitwise; the payer just has to be in the room.
+    const paidBy = input.paidBy ?? userId;
+    if (!memberIds.has(paidBy)) throw new AppError("Whoever paid must be a member of this room", 400);
+    const expenseDate = input.expenseDate ?? todayInIndia();
 
     let splits: { userId: string; sharePaise: number }[];
     if (input.splitType === "equal") {
@@ -42,8 +48,9 @@ export async function createExpense(userId: string, roomId: string, input: Creat
     }
 
     await client.query(
-      "INSERT INTO expenses (id, room_id, paid_by, description, amount_paise, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
-      [expenseId, roomId, userId, input.description, amountPaise, userId]
+      `INSERT INTO expenses (id, room_id, paid_by, description, amount_paise, expense_date, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [expenseId, roomId, paidBy, input.description, amountPaise, expenseDate, userId]
     );
 
     // One round trip for all shares instead of one INSERT per member.
@@ -53,7 +60,7 @@ export async function createExpense(userId: string, roomId: string, input: Creat
       [expenseId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
     );
 
-    return { id: expenseId, description: input.description, amountPaise, paidBy: userId, splits };
+    return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, splits };
   });
 }
 
@@ -64,13 +71,13 @@ export async function listExpenses(userId: string, roomId: string, params: PageP
     const result = await client.query(
       // LEFT JOIN: once someone leaves the room, RLS hides their user row, but
       // the expenses they paid for are still part of the room's history.
-      `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.created_at,
+      `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.expense_date::text AS expense_date, e.created_at,
               COALESCE(u.name, 'Former member') AS paid_by_name,
               COUNT(*) OVER() AS total_count
        FROM expenses e
        LEFT JOIN users u ON u.id = e.paid_by
        WHERE e.room_id = $1
-       ORDER BY e.created_at DESC
+       ORDER BY e.expense_date DESC, e.created_at DESC
        LIMIT $2 OFFSET $3`,
       [roomId, limit, offset]
     );
@@ -85,31 +92,25 @@ export async function getRoomBalances(userId: string, roomId: string) {
 // Takes a client so it runs under whoever's context the caller set up: a
 // member's (RLS-scoped) in getRoomBalances, the super admin's in the admin module.
 export async function computeRoomBalances(client: PoolClient, roomId: string) {
-  const members = await client.query<{ user_id: string; name: string }>(
-    `SELECT rm.user_id, u.name FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id = $1`,
+  // One query (one network round trip): each member's name and net balance =
+  // what they paid - the sum of their shares.
+  const members = await client.query<{ user_id: string; name: string; net: string }>(
+    `SELECT rm.user_id, u.name,
+            COALESCE((SELECT SUM(e.amount_paise) FROM expenses e
+                      WHERE e.room_id = $1 AND e.paid_by = rm.user_id), 0)
+          - COALESCE((SELECT SUM(es.share_paise) FROM expense_splits es
+                      JOIN expenses e ON e.id = es.expense_id
+                      WHERE e.room_id = $1 AND es.user_id = rm.user_id), 0) AS net
+     FROM room_members rm
+     JOIN users u ON u.id = rm.user_id
+     WHERE rm.room_id = $1`,
     [roomId]
   );
-
-  const paidTotals = await client.query<{ paid_by: string; total: string }>(
-    "SELECT paid_by, SUM(amount_paise) AS total FROM expenses WHERE room_id = $1 GROUP BY paid_by",
-    [roomId]
-  );
-  const owedTotals = await client.query<{ user_id: string; total: string }>(
-    `SELECT es.user_id, SUM(es.share_paise) AS total
-     FROM expense_splits es
-     JOIN expenses e ON e.id = es.expense_id
-     WHERE e.room_id = $1
-     GROUP BY es.user_id`,
-    [roomId]
-  );
-
-  const paidMap = new Map(paidTotals.rows.map((r) => [r.paid_by, Number(r.total)]));
-  const owedMap = new Map(owedTotals.rows.map((r) => [r.user_id, Number(r.total)]));
 
   const balances: (Balance & { name: string })[] = members.rows.map((m) => ({
     userId: m.user_id,
     name: m.name,
-    netPaise: (paidMap.get(m.user_id) ?? 0) - (owedMap.get(m.user_id) ?? 0),
+    netPaise: Number(m.net),
   }));
 
   const nameByUserId = new Map(members.rows.map((m) => [m.user_id, m.name]));
@@ -122,9 +123,8 @@ export async function computeRoomBalances(client: PoolClient, roomId: string) {
   return { balances, settlements };
 }
 
-// Months are cut in Indian time, not UTC - otherwise an expense added at
-// 1am IST on the 1st would be filed under the previous month.
-const APP_TIMEZONE = "Asia/Kolkata";
+// Months come from expense_date: the calendar day (in India) the money was
+// spent, chosen by whoever added it. No time-zone maths needed at query time.
 
 // Every expense in every room the caller belongs to, for one month. There's
 // no "rooms I'm in" filter here on purpose: RLS already hides other rooms.
@@ -135,6 +135,7 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
       description: string;
       amount_paise: string;
       my_share_paise: string;
+      expense_date: string;
       created_at: string;
       paid_by: string;
       paid_by_name: string;
@@ -142,7 +143,7 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
       room_name: string;
       room_type: string;
     }>(
-      `SELECT e.id, e.description, e.amount_paise, e.created_at, e.paid_by,
+      `SELECT e.id, e.description, e.amount_paise, e.expense_date::text AS expense_date, e.created_at, e.paid_by,
               COALESCE(u.name, 'Former member') AS paid_by_name,
               r.id AS room_id, r.name AS room_name, r.type AS room_type,
               COALESCE(es.share_paise, 0) AS my_share_paise
@@ -150,10 +151,10 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
        JOIN rooms r ON r.id = e.room_id
        LEFT JOIN users u ON u.id = e.paid_by
        LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
-       WHERE e.created_at >= ($2::date)::timestamp AT TIME ZONE '${APP_TIMEZONE}'
-         AND e.created_at <  ($2::date + interval '1 month')::timestamp AT TIME ZONE '${APP_TIMEZONE}'
+       WHERE e.expense_date >= $2::date
+         AND e.expense_date <  ($2::date + interval '1 month')
          AND ($3::uuid IS NULL OR e.room_id = $3)
-       ORDER BY e.created_at DESC`,
+       ORDER BY e.expense_date DESC, e.created_at DESC`,
       [userId, `${month}-01`, roomId ?? null]
     );
     return result.rows.map((r) => ({
@@ -175,7 +176,7 @@ export async function getMonthlySummary(userId: string, roomId?: string) {
       i_paid_paise: string;
       my_share_paise: string;
     }>(
-      `SELECT to_char(e.created_at AT TIME ZONE '${APP_TIMEZONE}', 'YYYY-MM') AS month,
+      `SELECT to_char(e.expense_date, 'YYYY-MM') AS month,
               COUNT(*) AS expense_count,
               SUM(e.amount_paise) AS total_paise,
               SUM(CASE WHEN e.paid_by = $1 THEN e.amount_paise ELSE 0 END) AS i_paid_paise,

@@ -25,6 +25,8 @@ import { FundMembersCard } from "@/components/funds/FundMembersCard";
 import { FundHistory } from "@/components/funds/FundHistory";
 import { FundSettlementCard } from "@/components/funds/FundSettlementCard";
 import { CloseFundPreview } from "@/components/funds/CloseFundPreview";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 type ModalState = { kind: "create" } | { kind: "pay"; memberId?: string } | { kind: "spend" } | { kind: "close" } | null;
 
@@ -36,6 +38,7 @@ export default function RoomFundPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const roomQuery = useApiQuery<Room>(`/api/rooms/${roomId}`);
   const membersQuery = useApiQuery<Member[]>(`/api/rooms/${roomId}/members`);
@@ -66,19 +69,26 @@ export default function RoomFundPage() {
   const confirmEntry = (entry: FundEntry) =>
     fund && run(() => confirmFundEntry(roomId, fund.id, entry.id), "Couldn't confirm that");
 
-  function deleteEntry(entry: FundEntry, isReject: boolean) {
+  async function deleteEntry(entry: FundEntry, isReject: boolean) {
     if (!fund) return;
-    const question = isReject
-      ? `Reject ${entry.member_name ?? "this"}'s payment? Do this only if you didn't receive it.`
-      : "Delete this entry?";
-    if (!window.confirm(question)) return;
+    const ok = await confirm(
+      isReject
+        ? {
+            title: `Reject ${entry.member_name ?? "this"}'s payment?`,
+            message: "Only do this if you didn't receive the money. It will be removed from the fund.",
+            confirmLabel: "Reject payment",
+            danger: true,
+          }
+        : { title: "Delete this entry?", confirmLabel: "Delete", danger: true }
+    );
+    if (!ok) return;
     run(() => deleteFundEntry(roomId, fund.id, entry.id), "Couldn't delete that entry");
   }
 
   const error = roomQuery.error ?? membersQuery.error ?? fundsQuery.error ?? detailQuery.error;
   if (error) return <p className="text-danger">{error}</p>;
   if (!roomQuery.data || fundsQuery.loading || (activeId && !fund)) {
-    return <p className="text-foreground/50">Loading fund...</p>;
+    return <LoadingState variant="page" />;
   }
   const room = roomQuery.data;
   const open = fund?.status === "open";

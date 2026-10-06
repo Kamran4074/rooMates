@@ -1,5 +1,7 @@
 # RooMates
 
+[![CI](https://github.com/Kamran4074/rooMates/actions/workflows/ci.yml/badge.svg)](https://github.com/Kamran4074/rooMates/actions/workflows/ci.yml)
+
 **Split rent and bills with roommates, and find a room or flatmate near you.**
 
 RooMates has two halves:
@@ -39,6 +41,7 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 **Expense rooms**
 - Rooms for flatmates or trips, joined with an invite code that only the room admin can see or reset
 - The admin can remove members (only once they're settled up; the invite code rotates automatically)
+- Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
 - Room fund ("kitty"): ₹X per person paid upfront to one collector, partial payments, spending from the pool. Payments a member records themselves count only after the collector confirms them. Closing the fund settles the leftover so everyone paid an equal share of what was spent
 - Monthly expenses view and month-by-month history across rooms
@@ -163,7 +166,8 @@ Frontend/src/
 - **Route guard:** `(app)/layout.tsx` sends signed-out users to `/signin` and unfinished accounts to `/onboarding`. Admin screens are hidden from non-admins, but the server checks again on every call.
 - **Data fetching:** `useApiQuery` / `usePagedQuery` handle loading and error state and ignore stale responses. On a 401 the client refreshes the token once and retries.
 - **State:** Zustand only for the session, the shared room list and dialog state; everything else is component state or fetched data.
-- **Every screen** handles loading, empty, error and success, and works on phones (one-column grids, stacked lists instead of wide tables, scrollable dialogs).
+- **Every screen** handles loading (skeleton placeholders), empty, error and success, and works on phones (one-column grids, stacked lists instead of wide tables, scrollable dialogs). Branded 404 and error pages.
+- **Accessibility:** every form field has a linked label; dialogs move focus inside, keep Tab inside, close on Escape and return focus to what opened them; destructive actions use an in-app confirm dialog instead of `window.confirm`; visible keyboard focus on buttons and fields.
 
 ## User roles and authorization
 
@@ -183,15 +187,15 @@ Frontend/src/
 | Table | What it holds |
 |---|---|
 | `users`, `organizations` | accounts (role, suspension), billing tenant / room quota |
-| `rooms`, `room_members` | expense rooms and who's in them (role: admin/member) |
-| `expenses`, `expense_splits` | each expense and each member's share (integer paise) |
+| `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
+| `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it) and each member's share (integer paise) |
 | `room_funds`, `fund_participants`, `fund_entries` | kitty per room: collector and status; who's in it; one ledger of payments, spends and the closing refunds/collections (each marked confirmed once money changed hands) |
 | `listings`, `listing_images` | room listings (status lifecycle, optional lat/lng) and photos |
 | `listing_requests`, `listing_reports` | interest requests (one per user per listing); user reports |
 | `refresh_tokens`, `otp_codes` | SHA-256 hashes only |
 | `audit_logs` | admin actions, written in the same transaction as the action |
 
-Indexes were added for the queries that actually run: listings by `(status, created_at)`, `(status, lower(city))`, `(status, pincode)`, `owner_id`, and a partial `(latitude, longitude)` index on published listings for "near me".
+Indexes were added for the queries that actually run: `expenses (room_id, expense_date DESC, created_at DESC)`, `room_members (user_id)`, `expense_splits (user_id)`, `refresh_tokens (user_id)`, `fund_participants (user_id)`; listings by `(status, created_at)`, `(status, lower(city))`, `(status, pincode)`, `owner_id`, and a partial `(latitude, longitude)` index on published listings for "near me".
 
 **Money** is stored as integer paise. **Transactions** are used where several writes must succeed together, e.g. accepting a request + marking the listing rented + declining the other pending requests. **Races** are handled with single-statement check-and-set updates (refresh-token rotation, answering a request) or a row lock (spending from a fund can't overdraw it).
 
@@ -219,6 +223,8 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 - Rate limits: per-IP baseline, per-account login limit, login slow-down, email/OTP limits
 - Zod validation on every input; parameterised SQL everywhere (dynamic filters only ever add `$n` placeholders)
 - Passwords bcrypt-hashed (72-byte limit enforced); emails normalised to lowercase
+- JWTs signed and verified with a pinned algorithm (HS256); used OTP codes and expired/revoked refresh tokens are deleted daily
+- Logs carry user ids, not emails (email addresses are masked in error logs)
 - Two DB roles: the API uses least-privilege `app_user` (RLS applies); the owner role is used only by migrations and the admin module
 - Secrets only in `.env` (git-ignored); env validated at startup
 - Contact details shared only after a request is accepted; owner IDs aren't exposed in public listing data
@@ -323,6 +329,11 @@ npm run test:api    # API integration tests: real app + the database in .env; cr
 ```
 
 The API tests cover registration/verification/login, refresh-token rotation, room isolation, listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension and the admin room view.
+
+**CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
+
+- **Backend:** typecheck, unit tests, then a fresh Postgres 17 service container with every migration applied from zero, then the API tests and a production build. It needs no real secrets: CI uses a throwaway database and a dummy JWT secret. Because `app_user` there is a normal (non-superuser) role, the tests also prove RLS works.
+- **Frontend:** `next typegen` (route types), typecheck, ESLint, `next build`.
 
 ## Deployment
 

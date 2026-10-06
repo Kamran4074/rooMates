@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 // One "I'm interested" request, as the listing's owner sees it.
 // Contact details arrive from the API only after it's accepted.
@@ -26,11 +27,21 @@ export function ReceivedRequestItem({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const status = REQUEST_STATUS[request.status];
   const name = request.requester_name ?? "Former user";
 
   async function answer(action: "accept" | "reject", markRented = false) {
-    if (markRented && !window.confirm("Accept and mark the room as rented? Other waiting requests will be declined.")) return;
+    if (
+      markRented &&
+      !(await confirm({
+        title: "Accept and mark as rented?",
+        message: "The listing is taken down from search, and everyone else still waiting is declined.",
+        confirmLabel: "Accept & mark rented",
+      }))
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

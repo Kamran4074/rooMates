@@ -20,13 +20,15 @@ import { FormMessage } from "@/components/ui/FormMessage";
 import { Pagination } from "@/components/ui/Pagination";
 import { PhotoManager } from "@/components/listings/PhotoManager";
 import { ReceivedRequestItem } from "@/components/listings/ReceivedRequestItem";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function ListingPage() {
   const { listingId } = useParams<{ listingId: string }>();
   const { data: listing, error, reload } = useApiQuery<ListingDetail>(`/api/listings/${listingId}`);
 
   if (error) return <p className="text-danger">{error}</p>;
-  if (!listing) return <p className="text-foreground/50">Loading...</p>;
+  if (!listing) return <LoadingState variant="page" />;
 
   return (
     <>
@@ -124,6 +126,7 @@ function OwnerPanel({ listing, onChange }: { listing: ListingDetail; onChange: (
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [requestPage, setRequestPage] = useState(1);
+  const confirm = useConfirm();
   const requests = usePagedQuery<ReceivedRequest>(`/api/requests/received?listingId=${listing.id}&page=${requestPage}&limit=10`);
   const status = LISTING_STATUS[listing.status];
   const editable = listing.status !== "removed" && listing.status !== "rented";
@@ -182,9 +185,13 @@ function OwnerPanel({ listing, onChange }: { listing: ListingDetail; onChange: (
             variant="ghost"
             className="text-danger"
             disabled={busy}
-            onClick={() =>
-              window.confirm("Delete this listing for good? Its photos and requests go too.") &&
-              run(() => deleteListing(listing.id), () => router.push("/my-listings"))
+            onClick={async () =>
+              (await confirm({
+                title: "Delete this listing?",
+                message: "This can't be undone. Its photos and all requests are deleted too.",
+                confirmLabel: "Delete listing",
+                danger: true,
+              })) && run(() => deleteListing(listing.id), () => router.push("/my-listings"))
             }
           >
             <Trash2 className="h-4 w-4" /> Delete
@@ -210,7 +217,7 @@ function OwnerPanel({ listing, onChange }: { listing: ListingDetail; onChange: (
         {requests.error ? (
           <p className="text-danger text-sm">{requests.error}</p>
         ) : !requests.data ? (
-          <p className="text-sm text-foreground/50">Loading...</p>
+          <LoadingState rows={2} />
         ) : requests.data.items.length === 0 ? (
           <p className="text-sm text-foreground/55">
             {listing.status === "published" ? "No requests yet." : "Requests appear here once the listing is live."}

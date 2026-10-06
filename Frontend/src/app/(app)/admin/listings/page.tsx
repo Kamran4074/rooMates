@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminListingRow {
   id: string;
@@ -61,7 +62,7 @@ function AdminListings() {
       {error ? (
         <p className="text-danger">{error}</p>
       ) : !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState />
       ) : data.items.length === 0 ? (
         <EmptyState icon={<Inbox className="h-6 w-6" />} title={status === "pending" ? "Queue is empty" : "No listings"}>
           {status === "pending" && "Nothing is waiting for review."}

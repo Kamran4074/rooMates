@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { ReasonModal } from "@/components/admin/ReasonModal";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminListing extends Omit<ListingDetail, "is_mine"> {
   owner: { id: string; name: string; email: string; phone: string | null; suspended_at: string | null };
@@ -42,7 +43,7 @@ export default function AdminListingPage() {
   }
 
   if (error) return <p className="text-danger">{error}</p>;
-  if (!l) return <p className="text-foreground/50">Loading...</p>;
+  if (!l) return <LoadingState variant="page" />;
   const status = LISTING_STATUS[l.status];
 
   return (

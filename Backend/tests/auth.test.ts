@@ -80,6 +80,15 @@ describe("authentication on protected routes", () => {
     expect(forged.status).toBe(401);
   });
 
+  it("rejects a token signed with a different algorithm, even with the right secret", async () => {
+    const u = await createUser();
+    const jwt = await import("jsonwebtoken");
+    const { env } = await import("../src/config/env");
+    const hs512 = jwt.default.sign({ sub: u.id, organizationId: "x", email: u.email, name: "x" }, env.JWT_SECRET, { algorithm: "HS512" });
+    expect((await api({ ...u, token: hs512 }, "GET", "/api/users/me")).status).toBe(401);
+    expect((await api(u, "GET", "/api/users/me")).status).toBe(200); // the normal HS256 token still works
+  });
+
   it("room data is invisible to non-members", async () => {
     const [a, b] = await Promise.all([createUser(), createUser()]);
     const room = await api(a, "POST", "/api/rooms", { name: "Private flat", type: "roommates" });

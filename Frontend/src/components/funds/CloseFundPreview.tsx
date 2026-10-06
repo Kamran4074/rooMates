@@ -8,6 +8,7 @@ import type { FundClosePreview } from "@/lib/types";
 import { closeFund } from "@/services/fundsApi";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 // Shown before closing: everyone's equal share of what was spent, and who
 // gets money back or still owes. Nothing changes until "Close fund".
@@ -40,7 +41,7 @@ export function CloseFundPreview({
   }
 
   if (loadError) return <p className="text-danger text-sm">{loadError}</p>;
-  if (!preview) return <p className="text-sm text-foreground/50">Working it out...</p>;
+  if (!preview) return <LoadingState rows={3} />;
 
   return (
     <div className="flex flex-col gap-4">

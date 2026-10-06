@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AuditEntry {
   id: string;
@@ -38,7 +39,7 @@ export default function AuditLogPage() {
       {error ? (
         <p className="text-danger">{error}</p>
       ) : !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState />
       ) : data.items.length === 0 ? (
         <EmptyState icon={<ScrollText className="h-6 w-6" />} title="No actions yet" />
       ) : (

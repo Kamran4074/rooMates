@@ -5,7 +5,7 @@ import { AppError } from "../../middlewares/errorHandler";
 import { toPaise } from "../../utils/money";
 import { ContributionInput, CreateFundInput, SpendInput } from "./funds.schema";
 import { settleFund, summariseFund } from "./funds.summary";
-import { getMemberIds, requireMember } from "../rooms/rooms.repository";
+import { getMemberIds } from "../rooms/rooms.repository";
 
 // Room fund ("kitty"): everyone pays a fixed amount to one collector upfront,
 // it's spent on shared things, and when it's closed the leftover is settled
@@ -23,42 +23,41 @@ interface FundRow {
   status: "open" | "closed";
   closed_at: string | null;
   created_at: string;
+  /** Who's in the fund, in a stable order (it decides who gets leftover paise). */
+  participant_ids: string[];
+  /** The caller's role in the room - saves a separate membership query. */
+  my_role: "admin" | "member" | null;
 }
 
-const FUND_COLUMNS = "id, name, per_member_paise, collector_id, status, closed_at, created_at";
+// Every fund read brings its participants and the caller's room role along,
+// so one query replaces three. The database is a network hop away and each
+// separate query pays that delay again.
+const FUND_SELECT = `
+  SELECT f.id, f.name, f.per_member_paise, f.collector_id, f.status, f.closed_at, f.created_at,
+         ARRAY(SELECT p.user_id FROM fund_participants p WHERE p.fund_id = f.id ORDER BY p.added_at, p.user_id) AS participant_ids,
+         (SELECT m.role FROM room_members m WHERE m.room_id = f.room_id AND m.user_id = $1) AS my_role
+  FROM room_funds f`;
 
-async function loadFund(client: PoolClient, roomId: string, fundId: string, lock = false): Promise<FundRow> {
+async function loadFund(client: PoolClient, roomId: string, fundId: string, userId: string, lock = false): Promise<FundRow> {
   const { rows } = await client.query<FundRow>(
-    `SELECT ${FUND_COLUMNS} FROM room_funds WHERE id = $1 AND room_id = $2 ${lock ? "FOR UPDATE" : ""}`,
-    [fundId, roomId]
+    `${FUND_SELECT} WHERE f.id = $2 AND f.room_id = $3 ${lock ? "FOR UPDATE OF f" : ""}`,
+    [userId, fundId, roomId]
   );
   if (!rows[0]) throw new AppError("Fund not found", 404);
   return rows[0];
 }
 
 // The collector runs the fund; the room admin can always step in.
-async function canManage(client: PoolClient, roomId: string, fund: FundRow, userId: string) {
-  return fund.collector_id === userId || (await requireMember(client, roomId, userId)) === "admin";
-}
+const canManage = (fund: FundRow, userId: string) => fund.collector_id === userId || fund.my_role === "admin";
 
-async function requireManager(client: PoolClient, roomId: string, fund: FundRow, userId: string) {
-  if (!(await canManage(client, roomId, fund, userId))) {
+function requireManager(fund: FundRow, userId: string) {
+  if (!canManage(fund, userId)) {
     throw new AppError("Only the fund's collector or the room admin can do this", 403);
   }
 }
 
 function requireOpen(fund: FundRow) {
   if (fund.status !== "open") throw new AppError("This fund is closed", 409);
-}
-
-async function participantsByFund(client: PoolClient, fundIds: string[]) {
-  const { rows } = await client.query<{ fund_id: string; user_id: string }>(
-    "SELECT fund_id, user_id FROM fund_participants WHERE fund_id = ANY($1::uuid[]) ORDER BY added_at, user_id",
-    [fundIds]
-  );
-  const map = new Map<string, string[]>();
-  for (const r of rows) map.set(r.fund_id, [...(map.get(r.fund_id) ?? []), r.user_id]);
-  return map;
 }
 
 // Confirmed contributions (per member), unconfirmed ones, and spends - for
@@ -93,7 +92,7 @@ async function entryTotals(client: PoolClient, roomId: string, fundId?: string) 
 
 type Totals = Awaited<ReturnType<typeof entryTotals>>;
 
-function summarise(fund: FundRow, participantIds: string[], totals: Totals) {
+function summarise(fund: FundRow, totals: Totals) {
   const perMemberPaise = Number(fund.per_member_paise);
   return {
     id: fund.id,
@@ -105,7 +104,7 @@ function summarise(fund: FundRow, participantIds: string[], totals: Totals) {
     createdAt: fund.created_at,
     ...summariseFund(
       perMemberPaise,
-      participantIds,
+      fund.participant_ids,
       totals.paid.get(fund.id) ?? new Map(),
       totals.awaiting.get(fund.id) ?? new Map(),
       totals.spent.get(fund.id) ?? 0
@@ -126,16 +125,15 @@ async function namesFor(client: PoolClient, ids: string[]) {
 
 export async function listFunds(userId: string, roomId: string) {
   return withUserContext(userId, async (client) => {
-    await getMemberIds(client, roomId);
-    const funds = await client.query<FundRow>(
-      `SELECT ${FUND_COLUMNS} FROM room_funds WHERE room_id = $1 ORDER BY created_at DESC`,
-      [roomId]
-    );
-    const participants = await participantsByFund(client, funds.rows.map((f) => f.id));
+    // RLS: a room you're not in has no funds you can see.
+    const funds = await client.query<FundRow>(`${FUND_SELECT} WHERE f.room_id = $2 ORDER BY f.created_at DESC`, [
+      userId,
+      roomId,
+    ]);
     const totals = await entryTotals(client, roomId);
     // The list only needs the headline numbers, not every member's row.
     return funds.rows.map((f) => {
-      const { members: _members, ...headline } = summarise(f, participants.get(f.id) ?? [], totals);
+      const { members: _members, ...headline } = summarise(f, totals);
       return headline;
     });
   });
@@ -143,11 +141,10 @@ export async function listFunds(userId: string, roomId: string) {
 
 export async function getFund(userId: string, roomId: string, fundId: string) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId);
-    const participantIds = (await participantsByFund(client, [fundId])).get(fundId) ?? [];
+    const fund = await loadFund(client, roomId, fundId, userId);
     const totals = await entryTotals(client, roomId, fundId);
-    const { members, ...summary } = summarise(fund, participantIds, totals);
-    const person = await namesFor(client, [...participantIds, fund.collector_id]);
+    const { members, ...summary } = summarise(fund, totals);
+    const person = await namesFor(client, [...fund.participant_ids, fund.collector_id]);
 
     const entries = await client.query(
       `SELECT e.id, e.kind, e.member_id, m.name AS member_name, e.amount_paise::float8 AS amount_paise,
@@ -163,7 +160,7 @@ export async function getFund(userId: string, roomId: string, fundId: string) {
     return {
       ...summary,
       collector: { id: fund.collector_id, ...person(fund.collector_id) },
-      canManage: await canManage(client, roomId, fund, userId),
+      canManage: canManage(fund, userId),
       members: members.map((m) => ({ ...m, ...person(m.userId) })),
       entries: entries.rows,
     };
@@ -215,15 +212,14 @@ async function lockedBalance(client: PoolClient, fundId: string): Promise<number
 
 export async function addContribution(userId: string, roomId: string, fundId: string, input: ContributionInput) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId);
+    const fund = await loadFund(client, roomId, fundId, userId);
     requireOpen(fund);
-    const participants = (await participantsByFund(client, [fundId])).get(fundId) ?? [];
-    if (!participants.includes(input.memberId)) throw new AppError("That person isn't part of this fund", 400);
+    if (!fund.participant_ids.includes(input.memberId)) throw new AppError("That person isn't part of this fund", 400);
 
     // The collector/admin is the one receiving the money, so their record is
     // the confirmation. Anyone else can only record their own payment, and
     // it waits until the collector confirms they got it.
-    const manager = await canManage(client, roomId, fund, userId);
+    const manager = canManage(fund, userId);
     if (input.memberId !== userId && !manager) {
       throw new AppError("You can only record your own payments", 403);
     }
@@ -242,8 +238,8 @@ export async function addContribution(userId: string, roomId: string, fundId: st
 // refund/collection as done.
 export async function confirmEntry(userId: string, roomId: string, fundId: string, entryId: string) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId);
-    await requireManager(client, roomId, fund, userId);
+    const fund = await loadFund(client, roomId, fundId, userId);
+    requireManager(fund, userId);
     const { rows } = await client.query<{ kind: string }>(
       "UPDATE fund_entries SET confirmed = true WHERE id = $1 AND fund_id = $2 AND NOT confirmed AND kind <> 'spend' RETURNING kind",
       [entryId, fundId]
@@ -256,7 +252,7 @@ export async function confirmEntry(userId: string, roomId: string, fundId: strin
 
 export async function addSpend(userId: string, roomId: string, fundId: string, input: SpendInput) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId, true);
+    const fund = await loadFund(client, roomId, fundId, userId, true);
     requireOpen(fund);
     const balance = await lockedBalance(client, fundId);
     const amountPaise = toPaise(input.amount);
@@ -278,7 +274,7 @@ export async function addSpend(userId: string, roomId: string, fundId: string, i
 // someone else recorded that never arrived.
 export async function deleteEntry(userId: string, roomId: string, fundId: string, entryId: string) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId, true);
+    const fund = await loadFund(client, roomId, fundId, userId, true);
     requireOpen(fund);
     const { rows } = await client.query<{ kind: string; amount_paise: string; created_by: string; confirmed: boolean }>(
       "SELECT kind, amount_paise, created_by, confirmed FROM fund_entries WHERE id = $1 AND fund_id = $2",
@@ -286,7 +282,7 @@ export async function deleteEntry(userId: string, roomId: string, fundId: string
     );
     const entry = rows[0];
     if (!entry) throw new AppError("Entry not found", 404);
-    const rejectingPending = entry.kind === "contribution" && !entry.confirmed && (await canManage(client, roomId, fund, userId));
+    const rejectingPending = entry.kind === "contribution" && !entry.confirmed && canManage(fund, userId);
     if (entry.created_by !== userId && !rejectingPending) {
       throw new AppError("Only the person who recorded this can delete it", 403);
     }
@@ -305,7 +301,7 @@ export async function deleteEntry(userId: string, roomId: string, fundId: string
 // ---------------- Closing ----------------
 
 async function computeSettlement(client: PoolClient, roomId: string, fund: FundRow) {
-  const participantIds = (await participantsByFund(client, [fund.id])).get(fund.id) ?? [];
+  const participantIds = fund.participant_ids;
   const totals = await entryTotals(client, roomId, fund.id);
   const paid = totals.paid.get(fund.id) ?? new Map<string, number>();
   const spentPaise = totals.spent.get(fund.id) ?? 0;
@@ -317,8 +313,8 @@ async function computeSettlement(client: PoolClient, roomId: string, fund: FundR
 // What closing would do, without doing it - shown before the collector confirms.
 export async function previewClose(userId: string, roomId: string, fundId: string) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId);
-    await requireManager(client, roomId, fund, userId);
+    const fund = await loadFund(client, roomId, fundId, userId);
+    requireManager(fund, userId);
     requireOpen(fund);
     const s = await computeSettlement(client, roomId, fund);
     const person = await namesFor(client, s.participantIds);
@@ -336,8 +332,8 @@ export async function previewClose(userId: string, roomId: string, fundId: strin
 // stops a payment or spend slipping in between the calculation and the close.
 export async function closeFund(userId: string, roomId: string, fundId: string) {
   return withUserContext(userId, async (client) => {
-    const fund = await loadFund(client, roomId, fundId, true);
-    await requireManager(client, roomId, fund, userId);
+    const fund = await loadFund(client, roomId, fundId, userId, true);
+    requireManager(fund, userId);
     requireOpen(fund);
     const s = await computeSettlement(client, roomId, fund);
     if (s.awaitingCount > 0) {

@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
 import { Table, Th, Td, MobileList } from "@/components/ui/Table";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function HistoryPage() {
   const rooms = useRoomsStore((s) => s.rooms);
@@ -65,7 +66,7 @@ export default function HistoryPage() {
 
       <Card className="rounded-3xl p-6">
         {loading ? (
-          <p className="text-foreground/50 py-8 text-center">Loading...</p>
+          <LoadingState />
         ) : months.length === 0 ? (
           <p className="text-foreground/55 py-12 text-center">No expenses yet — your monthly history will show up here.</p>
         ) : (

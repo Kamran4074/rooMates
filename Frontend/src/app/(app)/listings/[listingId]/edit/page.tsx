@@ -9,6 +9,7 @@ import { updateListing } from "@/services/listingsApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { ListingForm } from "@/components/listings/ListingForm";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function EditListingPage() {
   const { listingId } = useParams<{ listingId: string }>();
@@ -16,7 +17,7 @@ export default function EditListingPage() {
   const { data: listing, error } = useApiQuery<ListingDetail>(`/api/listings/${listingId}`);
 
   if (error) return <p className="text-danger">{error}</p>;
-  if (!listing) return <p className="text-foreground/50">Loading...</p>;
+  if (!listing) return <LoadingState variant="page" />;
   if (!listing.is_mine) return <p className="text-danger">You can only edit your own listings.</p>;
 
   return (

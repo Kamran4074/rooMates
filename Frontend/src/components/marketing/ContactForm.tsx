@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiPost, errorMessage } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { TextField } from "@/components/ui/TextField";
+import { TextArea } from "@/components/ui/TextArea";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 
@@ -37,20 +38,7 @@ export function ContactForm() {
     <Card as="form" onSubmit={handleSubmit} className="p-8 flex flex-col gap-4">
       <TextField label="Your name" required value={name} onChange={(e) => setName(e.target.value)} />
       <TextField label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-      <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-medium">
-          Message<span className="text-danger">*</span>
-        </label>
-        <textarea
-          required
-          minLength={10}
-          maxLength={2000}
-          rows={5}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          className="px-3 py-2.5 rounded-lg border border-card-border bg-background outline-none focus:border-primary resize-y"
-        />
-      </div>
+      <TextArea label="Message" required minLength={10} maxLength={2000} rows={5} value={message} onChange={(e) => setMessage(e.target.value)} />
       <FormMessage error={error} success={success} />
       <Button type="submit" loading={loading}>
         {loading ? "Sending..." : "Send message"}

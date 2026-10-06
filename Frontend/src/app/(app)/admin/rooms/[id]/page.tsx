@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminRoomDetail {
   id: string;
@@ -17,7 +18,7 @@ interface AdminRoomDetail {
   type: RoomType;
   created_at: string;
   members: { user_id: string; role: string; name: string; email: string }[];
-  recent_expenses: { id: string; description: string; amount_paise: number; created_at: string; paid_by_name: string | null }[];
+  recent_expenses: { id: string; description: string; amount_paise: number; expense_date: string; paid_by_name: string | null }[];
   balances: Balance[];
   settlements: Settlement[];
 }
@@ -26,7 +27,7 @@ export default function AdminRoomPage() {
   const { id } = useParams<{ id: string }>();
   const { data: room, error } = useApiQuery<AdminRoomDetail>(`/api/admin/rooms/${id}`);
   if (error) return <p className="text-danger">{error}</p>;
-  if (!room) return <p className="text-foreground/50">Loading...</p>;
+  if (!room) return <LoadingState variant="page" />;
 
   return (
     <>
@@ -55,7 +56,7 @@ export default function AdminRoomPage() {
             <ul className="divide-y divide-card-border">
               {room.recent_expenses.map((e) => (
                 <li key={e.id} className="py-2.5 flex items-center gap-3">
-                  <span className="text-xs text-foreground/45 w-12 shrink-0">{formatDate(e.created_at, "short")}</span>
+                  <span className="text-xs text-foreground/45 w-12 shrink-0">{formatDate(e.expense_date, "short")}</span>
                   <div className="flex-1 min-w-0">
                     <p className="truncate">{e.description}</p>
                     <p className="text-xs text-foreground/50">Paid by {e.paid_by_name ?? "former member"}</p>

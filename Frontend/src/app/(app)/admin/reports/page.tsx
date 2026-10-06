@@ -17,6 +17,8 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { Pagination } from "@/components/ui/Pagination";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface Report {
   id: string;
@@ -36,10 +38,21 @@ export default function AdminReportsPage() {
   const [status, setStatus] = useState<"open" | "resolved" | "dismissed">("open");
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const { data, error: loadError, reload } = usePagedQuery<Report>(`/api/admin/reports?status=${status}&page=${page}&limit=20`);
 
   async function act(id: string, action: "dismiss" | "resolve" | "remove_listing") {
-    if (action === "remove_listing" && !window.confirm("Take the listing down? Every open report on it will be resolved.")) return;
+    if (
+      action === "remove_listing" &&
+      !(await confirm({
+        title: "Take this listing down?",
+        message: "It disappears from search, and every open report on it is marked resolved.",
+        confirmLabel: "Take down",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     setError(null);
     try {
       await resolveReport(id, action);
@@ -68,7 +81,7 @@ export default function AdminReportsPage() {
       {loadError ? (
         <p className="text-danger">{loadError}</p>
       ) : !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState />
       ) : data.items.length === 0 ? (
         <EmptyState icon={<Flag className="h-6 w-6" />} title={status === "open" ? "No open reports" : "Nothing here"} />
       ) : (

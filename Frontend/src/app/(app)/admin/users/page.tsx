@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { Pagination } from "@/components/ui/Pagination";
 import { ReasonModal } from "@/components/admin/ReasonModal";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminUser {
   id: string;
@@ -79,7 +80,7 @@ export default function AdminUsersPage() {
       {loadError ? (
         <p className="text-danger">{loadError}</p>
       ) : !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState />
       ) : data.items.length === 0 ? (
         <EmptyState icon={<Users className="h-6 w-6" />} title="No users match" />
       ) : (

@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { ListingCard } from "@/components/listings/ListingCard";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 // Owner dashboard: every listing I've posted, in any status.
 export default function MyListingsPage() {
@@ -54,7 +55,7 @@ export default function MyListingsPage() {
       {error ? (
         <p className="text-danger">{error}</p>
       ) : loading && !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState variant="cards" rows={3} />
       ) : data && data.items.length === 0 ? (
         <EmptyState
           icon={<Megaphone className="h-6 w-6" />}

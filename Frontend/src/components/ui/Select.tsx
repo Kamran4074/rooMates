@@ -8,7 +8,7 @@ export function Select({ label, className, children, ...props }: SelectProps) {
   const select = (
     <div className="relative">
       <select
-        className={`w-full appearance-none h-10 pl-4 pr-10 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary cursor-pointer ${className ?? ""}`}
+        className={`w-full appearance-none h-11 pl-4 pr-10 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary cursor-pointer ${className ?? ""}`}
         {...props}
       >
         {children}

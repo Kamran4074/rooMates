@@ -36,6 +36,8 @@ export interface Expense {
   amount_paise: string;
   paid_by: string;
   paid_by_name: string;
+  /** The day it was spent (YYYY-MM-DD), chosen when adding it. */
+  expense_date: string;
   created_at: string;
 }
 
@@ -200,6 +202,7 @@ export interface MyExpense {
   description: string;
   amount_paise: number;
   my_share_paise: number;
+  expense_date: string;
   created_at: string;
   paid_by: string;
   paid_by_name: string;

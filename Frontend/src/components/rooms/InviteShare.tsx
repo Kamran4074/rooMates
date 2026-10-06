@@ -6,6 +6,7 @@ import { useCopyFeedback } from "@/lib/clipboard";
 import { apiAuthPost, errorMessage } from "@/lib/api";
 import { site } from "@/lib/site";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 // `roomId` enables "Reset code" (admin only) - for a code that got shared too
 // widely. The old code stops working immediately.
@@ -24,9 +25,16 @@ export function InviteShare({
   const [inviteCode, setInviteCode] = useState(initialCode);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function handleReset() {
-    if (!roomId || !window.confirm("Make a new code? The current one will stop working.")) return;
+    if (!roomId) return;
+    const ok = await confirm({
+      title: "Make a new invite code?",
+      message: "The current code stops working straight away. Anyone you've already sent it to will need the new one.",
+      confirmLabel: "Make new code",
+    });
+    if (!ok) return;
     setResetting(true);
     setError(null);
     try {

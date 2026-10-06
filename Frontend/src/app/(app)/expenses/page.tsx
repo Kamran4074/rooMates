@@ -20,6 +20,7 @@ import { Table, Th, Td, MobileList } from "@/components/ui/Table";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { AddExpenseAnyRoom } from "@/components/rooms/AddExpenseAnyRoom";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 // useSearchParams needs a Suspense boundary or `next build` fails for this route.
 export default function ExpensesPage() {
@@ -116,7 +117,7 @@ function Expenses() {
 
       <Card className="rounded-3xl p-6">
         {loading ? (
-          <p className="text-foreground/50 py-8 text-center">Loading...</p>
+          <LoadingState />
         ) : expenses.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-foreground/55 mb-4">No expenses in {monthLabel(month)}.</p>
@@ -132,7 +133,7 @@ function Expenses() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium">{e.description}</p>
                   <p className="text-xs text-foreground/50 truncate">
-                    {formatDate(e.created_at, "short")} ·{" "}
+                    {formatDate(e.expense_date, "short")} ·{" "}
                     <Link href={`/rooms/${e.room_id}`} className="hover:text-primary">
                       {e.room_name}
                     </Link>{" "}
@@ -160,7 +161,7 @@ function Expenses() {
             <tbody>
               {expenses.map((e) => (
                 <tr key={e.id} className="hover:bg-foreground/2">
-                  <Td className="whitespace-nowrap text-foreground/55">{formatDate(e.created_at, "short")}</Td>
+                  <Td className="whitespace-nowrap text-foreground/55">{formatDate(e.expense_date, "short")}</Td>
                   <Td className="font-medium">{e.description}</Td>
                   <Td>
                     <Link href={`/rooms/${e.room_id}`} className="inline-flex items-center gap-2 hover:text-primary whitespace-nowrap">

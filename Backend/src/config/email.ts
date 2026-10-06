@@ -38,10 +38,13 @@ export async function sendEmail({ to, subject, html, replyTo }: EmailOptions) {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    logger.error("Failed to send email", { to, subject, status: res.status, detail });
+    logger.error("Failed to send email", { to: maskEmail(to), subject, status: res.status, detail });
     throw new AppError("Could not send email. Please try again.", 502);
   }
 }
+
+// "kamran@gmail.com" -> "ka***@gmail.com": enough to debug, not a full address in the logs.
+export const maskEmail = (email: string) => email.replace(/^(.{0,2}).*(@.*)$/, "$1***$2");
 
 export function escapeHtml(value: string): string {
   return value

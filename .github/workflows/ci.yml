@@ -1,0 +1,88 @@
+# CI: every push to main and every pull request must typecheck, lint, test and
+# build. The API tests run against a throwaway Postgres with all migrations
+# applied from zero, so a broken migration fails here, not on the real database.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (typecheck, unit + API tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Backend
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # The first migration grants CONNECT on "neondb" (the Neon database name).
+          POSTGRES_DB: neondb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Test-only values: a local throwaway database and a dummy JWT secret.
+    # No real secrets are needed; email and Google are never called by the tests.
+    env:
+      NODE_ENV: test
+      CORS_ORIGIN: http://localhost:3000
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/neondb
+      APP_DB_PASSWORD: ci_app_password
+      APP_DATABASE_URL: postgres://app_user:ci_app_password@localhost:5432/neondb
+      JWT_SECRET: ci-only-not-a-real-secret
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      # Applies every migration to the empty database (also proves they run cleanly from scratch).
+      - run: npm run migrate:up
+      - run: npm run test:api
+      - run: npm run build
+
+  frontend:
+    name: Frontend (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      # Route types (LayoutProps, PageProps) live in .next/types, which a fresh
+      # checkout doesn't have; without this, tsc fails even though the code is fine.
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npx eslint src
+      - run: npm run build

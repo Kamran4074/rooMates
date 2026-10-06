@@ -15,6 +15,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { ReceivedRequestItem } from "@/components/listings/ReceivedRequestItem";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 // useSearchParams needs a Suspense boundary for `next build`.
 export default function RequestsPage() {
@@ -49,7 +50,7 @@ function Received() {
   const [page, setPage] = useState(1);
   const { data, error, reload } = usePagedQuery<ReceivedRequest>(`/api/requests/received?page=${page}&limit=10`);
   if (error) return <p className="text-danger">{error}</p>;
-  if (!data) return <p className="text-foreground/50">Loading...</p>;
+  if (!data) return <LoadingState />;
   if (data.items.length === 0) {
     return (
       <EmptyState icon={<Inbox className="h-6 w-6" />} title="No requests yet">
@@ -73,7 +74,7 @@ function Sent() {
   const [page, setPage] = useState(1);
   const { data, error } = usePagedQuery<SentRequest>(`/api/requests/sent?page=${page}&limit=10`);
   if (error) return <p className="text-danger">{error}</p>;
-  if (!data) return <p className="text-foreground/50">Loading...</p>;
+  if (!data) return <LoadingState />;
   if (data.items.length === 0) {
     return (
       <EmptyState

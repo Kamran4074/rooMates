@@ -17,6 +17,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { StatCard } from "@/components/ui/StatCard";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -87,7 +88,7 @@ export default function DashboardPage() {
         <section>
           <h2 className="font-semibold text-lg mb-4">Your rooms</h2>
           {!loaded ? (
-            <p className="text-foreground/50">Loading rooms...</p>
+            <LoadingState variant="cards" rows={3} />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {rooms.map((room) => {

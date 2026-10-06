@@ -247,9 +247,9 @@ export async function getRoom(roomId: string) {
       [roomId]
     );
     const expenses = await client.query(
-      `SELECT e.id, e.description, e.amount_paise::float8 AS amount_paise, e.created_at, u.name AS paid_by_name
+      `SELECT e.id, e.description, e.amount_paise::float8 AS amount_paise, e.expense_date::text AS expense_date, e.created_at, u.name AS paid_by_name
        FROM expenses e LEFT JOIN users u ON u.id = e.paid_by
-       WHERE e.room_id = $1 ORDER BY e.created_at DESC LIMIT 50`,
+       WHERE e.room_id = $1 ORDER BY e.expense_date DESC, e.created_at DESC LIMIT 50`,
       [roomId]
     );
     // Same balance code members see, just run on the admin connection.

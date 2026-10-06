@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { Avatar } from "@/components/ui/Avatar";
 import { PhoneField, toLocalDigits } from "@/components/ui/PhoneField";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function SettingsPage() {
   const { data: me, error } = useApiQuery<Me>("/api/users/me");
@@ -19,7 +20,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Manage your profile." />
-      {me ? <ProfileForm me={me} /> : error ? <FormMessage error={error} /> : <p className="text-foreground/50">Loading...</p>}
+      {me ? <ProfileForm me={me} /> : error ? <FormMessage error={error} /> : <LoadingState rows={3} />}
     </>
   );
 }

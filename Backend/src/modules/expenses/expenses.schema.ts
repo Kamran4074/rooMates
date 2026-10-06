@@ -1,12 +1,22 @@
 import { z } from "zod";
 
+// Today's date in India - expense dates are calendar days in the app's time zone.
+export const todayInIndia = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 export const createExpenseSchema = z
   .object({
-    description: z.string().min(1, "Description is required").max(200),
+    description: z.string().trim().min(1, "Description is required").max(200),
     amount: z.number().positive("Amount must be positive"),
     splitType: z.enum(["equal", "custom"]),
     splits: z
       .array(z.object({ userId: z.string().uuid(), amount: z.number().nonnegative() }))
+      .optional(),
+    // Who paid. Defaults to whoever is adding it; must be a room member.
+    paidBy: z.string().uuid("Invalid member").optional(),
+    // The day it was spent (YYYY-MM-DD). Defaults to today.
+    expenseDate: z.iso
+      .date("Use YYYY-MM-DD")
+      .refine((d) => d <= todayInIndia(), "The date can't be in the future")
       .optional(),
   })
   .refine((data) => data.splitType === "equal" || (data.splits && data.splits.length > 0), {

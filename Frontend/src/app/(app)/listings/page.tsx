@@ -16,6 +16,7 @@ import { FormMessage } from "@/components/ui/FormMessage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { ListingCard } from "@/components/listings/ListingCard";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface Filters {
   city: string;
@@ -144,7 +145,7 @@ export default function FindRoomPage() {
       {error ? (
         <p className="text-danger">{error}</p>
       ) : loading && !data ? (
-        <p className="text-foreground/50">Finding rooms...</p>
+        <LoadingState variant="cards" rows={6} />
       ) : data && data.items.length === 0 ? (
         <EmptyState icon={<SearchX className="h-6 w-6" />} title="No rooms found">
           {near ? "Nothing listed this close yet. Try a bigger distance." : "Try another city or loosen the filters."}

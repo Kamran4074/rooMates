@@ -8,7 +8,22 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/dashboard", "/rooms/", "/expenses", "/history", "/settings", "/onboarding", "/verify-email", "/reset-password", "/forgot-password"],
+      disallow: [
+        "/dashboard",
+        "/rooms/",
+        "/expenses",
+        "/history",
+        "/settings",
+        "/onboarding",
+        "/verify-email",
+        "/reset-password",
+        "/forgot-password",
+        // Listings are only shown to signed-in users.
+        "/listings",
+        "/my-listings",
+        "/requests",
+        "/admin",
+      ],
     },
     sitemap: `${site.url}/sitemap.xml`,
   };

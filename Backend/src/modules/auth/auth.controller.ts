@@ -55,8 +55,9 @@ export const googleLogin: Handler = async (req, res) => {
 
 export const signup: Handler = async (req, res) => {
   const input = signupSchema.parse(req.body);
-  await signupWithPassword(input);
-  logger.info("User signed up, verification pending", { email: input.email });
+  // Log the id, not the email: logs shouldn't carry personal data.
+  const userId = await signupWithPassword(input);
+  logger.info("User signed up, verification pending", { userId });
   sendCreated(res, { requiresVerification: true, email: input.email }, "Check your email for a verification code");
 };
 

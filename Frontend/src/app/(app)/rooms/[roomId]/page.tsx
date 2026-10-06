@@ -21,6 +21,8 @@ import { InviteShare } from "@/components/rooms/InviteShare";
 import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
 import { RoomFundCard } from "@/components/funds/RoomFundCard";
 import { Pagination } from "@/components/ui/Pagination";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -28,6 +30,7 @@ export default function RoomPage() {
   const reloadRooms = useRoomsStore((s) => s.load);
   const [modal, setModal] = useState<"expense" | "invite" | null>(null);
   const [memberError, setMemberError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // Four independent requests, fired in parallel.
   const roomQuery = useApiQuery<RoomDetail>(`/api/rooms/${roomId}`);
@@ -46,7 +49,13 @@ export default function RoomPage() {
   const settlements = balancesQuery.data?.settlements ?? [];
 
   async function handleRemove(memberId: string, name: string) {
-    if (!window.confirm(`Remove ${name} from this room? The invite code will also change, so they can't rejoin with it.`)) return;
+    const ok = await confirm({
+      title: `Remove ${name}?`,
+      message: "They lose access to this room. The invite code also changes, so they can't rejoin with the old one.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setMemberError(null);
     try {
       await apiAuthDelete(`/api/rooms/${roomId}/members/${memberId}`);
@@ -71,7 +80,7 @@ export default function RoomPage() {
   const error = roomQuery.error ?? membersQuery.error ?? expensesQuery.error ?? balancesQuery.error;
   if (error) return <p className="text-danger">{error}</p>;
   if (!room || !expensesQuery.data || membersQuery.loading || balancesQuery.loading) {
-    return <p className="text-foreground/50">Loading room...</p>;
+    return <LoadingState variant="page" />;
   }
 
   const isAdmin = room.my_role === "admin";
@@ -140,7 +149,7 @@ export default function RoomPage() {
             <ul className="divide-y divide-card-border">
               {expenses.map((exp) => (
                 <li key={exp.id} className="flex items-center gap-4 py-3">
-                  <span className="text-xs text-foreground/45 w-12 shrink-0">{formatDate(exp.created_at, "short")}</span>
+                  <span className="text-xs text-foreground/45 w-12 shrink-0">{formatDate(exp.expense_date, "short")}</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{exp.description}</p>
                     <p className="text-xs text-foreground/50">Paid by {exp.paid_by === user?.id ? "you" : exp.paid_by_name}</p>

@@ -107,10 +107,14 @@ describe("upfront kitty", () => {
     await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: bhavya.id, amount: 1000 });
     await api(admin, "POST", `${base()}/${id}/spends`, { description: "Food", amount: 1500 }); // ₹500 each; Chirag paid 0
     const preview = await api(admin, "GET", `${base()}/${id}/close-preview`);
-    expect(preview.body.data.transfers).toEqual([
-      expect.objectContaining({ userId: bhavya.id, kind: "refund", amountPaise: 50000 }),
-      expect.objectContaining({ userId: chirag.id, kind: "collection", amountPaise: 50000 }),
-    ]);
+    // Order follows participant order, which isn't meaningful - compare as a set.
+    expect(preview.body.data.transfers).toHaveLength(2);
+    expect(preview.body.data.transfers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: bhavya.id, kind: "refund", amountPaise: 50000 }),
+        expect.objectContaining({ userId: chirag.id, kind: "collection", amountPaise: 50000 }),
+      ])
+    );
   });
 
   it("the collector must be in the fund, and everyone in it must be in the room", async () => {

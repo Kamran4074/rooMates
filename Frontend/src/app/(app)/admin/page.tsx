@@ -5,6 +5,7 @@ import { Building2, Clock, Flag, Home, Megaphone, UserX, Users, CheckCircle2 } f
 import { useApiQuery } from "@/lib/useApiQuery";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface Stats {
   total_users: number;
@@ -20,7 +21,7 @@ interface Stats {
 export default function AdminOverviewPage() {
   const { data: s, error } = useApiQuery<Stats>("/api/admin/stats");
   if (error) return <p className="text-danger">{error}</p>;
-  if (!s) return <p className="text-foreground/50">Loading...</p>;
+  if (!s) return <LoadingState variant="page" />;
 
   return (
     <>

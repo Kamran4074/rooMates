@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
+import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminRoom {
   id: string;
@@ -55,7 +56,7 @@ export default function AdminRoomsPage() {
       {error ? (
         <p className="text-danger">{error}</p>
       ) : !data ? (
-        <p className="text-foreground/50">Loading...</p>
+        <LoadingState />
       ) : data.items.length === 0 ? (
         <EmptyState icon={<Building2 className="h-6 w-6" />} title="No rooms found" />
       ) : (

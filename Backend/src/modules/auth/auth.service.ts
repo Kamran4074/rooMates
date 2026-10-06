@@ -136,7 +136,7 @@ function toAuthenticatedUser(row: EmailLookupRow, email: string): AuthenticatedU
 
 // Creates the (unverified) account and emails a verification code. No tokens
 // are issued here - the account can't be used until the code is confirmed.
-export async function signupWithPassword(input: SignupInput): Promise<void> {
+export async function signupWithPassword(input: SignupInput): Promise<string> {
   const passwordHash = await bcrypt.hash(input.password, 10);
 
   let userId: string;
@@ -164,6 +164,7 @@ export async function signupWithPassword(input: SignupInput): Promise<void> {
   }
 
   await issueOtp(userId, input.email, "email_verification");
+  return userId;
 }
 
 // Compared against when the email has no password, so a login for an unknown
@@ -247,7 +248,7 @@ export function issueAccessToken(user: AuthenticatedUser): string {
   return jwt.sign(
     { sub: user.userId, organizationId: user.organizationId, email: user.email, name: user.name },
     env.JWT_SECRET,
-    { expiresIn: env.ACCESS_TOKEN_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
+    { algorithm: "HS256", expiresIn: env.ACCESS_TOKEN_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
   );
 }
 

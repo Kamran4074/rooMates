@@ -7,6 +7,7 @@ import type { ListingImage } from "@/lib/types";
 import { deleteListingPhoto, setCoverPhoto, uploadListingPhoto } from "@/services/listingsApi";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 const MAX_PHOTOS = 6;
 
@@ -14,6 +15,7 @@ export function PhotoManager({ listingId, images, onChange }: { listingId: strin
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // Uploads one at a time so a failure says exactly which photo failed.
   async function handleFiles(files: FileList | null) {
@@ -65,7 +67,10 @@ export function PhotoManager({ listingId, images, onChange }: { listingId: strin
                 </button>
               )}
               <button
-                onClick={() => window.confirm("Delete this photo?") && run(() => deleteListingPhoto(listingId, img.id))}
+                onClick={async () =>
+                  (await confirm({ title: "Delete this photo?", confirmLabel: "Delete", danger: true })) &&
+                  run(() => deleteListingPhoto(listingId, img.id))
+                }
                 className="p-1.5 rounded-full bg-card/90 hover:bg-card text-danger"
                 aria-label="Delete photo"
               >

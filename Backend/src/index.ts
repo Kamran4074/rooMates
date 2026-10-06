@@ -1,8 +1,9 @@
 import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
-import { pool, adminPool } from "./config/db";
+import { pool, adminPool, warmUpPool } from "./config/db";
 import { runMigrations } from "./config/migrate";
+import { scheduleHousekeeping } from "./config/housekeeping";
 
 async function start() {
   if (env.MIGRATE_ON_START) {
@@ -19,6 +20,9 @@ async function start() {
   const server = app.listen(env.PORT, () => {
     logger.info(`Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
   });
+  // In the background: requests still work if this is slow or fails.
+  warmUpPool().catch((err) => logger.warn("Couldn't pre-open DB connections", { error: (err as Error).message }));
+  scheduleHousekeeping();
 
   // Hosts like Render/Railway send SIGTERM on every deploy. Stop accepting new
   // connections, let in-flight requests finish, then close the DB pool - instead
