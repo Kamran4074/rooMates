@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendCreated, sendNoContent, sendSuccess } from "../../utils/response";
 import { roomIdParam } from "../../utils/validation";
-import { contributionSchema, createFundSchema, entryIdParam, fundIdParam, spendSchema } from "./funds.schema";
+import { contributionSchema, createFundSchema, disputeSchema, entryIdParam, fundIdParam, spendSchema } from "./funds.schema";
 import {
   addContribution,
   addSpend,
@@ -9,6 +9,8 @@ import {
   confirmEntry,
   createFund,
   deleteEntry,
+  disputeEntry,
+  listMyPendingApprovals,
   getFund,
   listFunds,
   previewClose,
@@ -55,6 +57,18 @@ export async function handleConfirmEntry(req: Request, res: Response) {
   sendSuccess(res, await confirmEntry(req.auth!.sub, roomId, fundId, entryIdParam.parse(req.params.entryId)), {
     message: "Confirmed",
   });
+}
+
+export async function handleDisputeEntry(req: Request, res: Response) {
+  const { roomId, fundId } = ids(req);
+  const { note } = disputeSchema.parse(req.body);
+  sendSuccess(res, await disputeEntry(req.auth!.sub, roomId, fundId, entryIdParam.parse(req.params.entryId), note), {
+    message: "Disputed",
+  });
+}
+
+export async function handleMyPendingApprovals(req: Request, res: Response) {
+  sendSuccess(res, await listMyPendingApprovals(req.auth!.sub));
 }
 
 export async function handlePreviewClose(req: Request, res: Response) {

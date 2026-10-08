@@ -7,8 +7,8 @@ import { TextArea } from "@/components/ui/TextArea";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 
-// "Why?" dialog for moderation actions (reject, remove, suspend). The reason
-// is stored in the audit log, and for listings it's shown to the owner.
+// "Why?" dialog: admin moderation (reject, remove, suspend, delete) and a
+// member disputing a fund payment. The reason is kept with the action.
 export function ReasonModal({
   open,
   title,

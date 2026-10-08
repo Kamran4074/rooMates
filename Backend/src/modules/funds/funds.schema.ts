@@ -24,6 +24,10 @@ export const spendSchema = z.object({
   amount: rupees,
 });
 
+export const disputeSchema = z.object({
+  note: z.string().trim().min(3, "Say what's wrong, e.g. \"I paid 1000, not 1500\"").max(200),
+});
+
 export const fundIdParam = z.string().uuid("Invalid fund id");
 export const entryIdParam = z.string().uuid("Invalid entry id");
 

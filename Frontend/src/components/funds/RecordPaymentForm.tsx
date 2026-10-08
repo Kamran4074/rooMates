@@ -21,6 +21,7 @@ export function RecordPaymentForm({
   members,
   initialMemberId,
   collectorName,
+  currentUserId,
   onDone,
 }: {
   roomId: string;
@@ -29,6 +30,8 @@ export function RecordPaymentForm({
   initialMemberId?: string;
   /** Set when the person recording isn't the collector: their payment waits for confirmation. */
   collectorName?: string;
+  /** Recording for someone else asks them to approve it. */
+  currentUserId?: string;
   onDone: () => void;
 }) {
   const startMember = members.find((m) => m.userId === initialMemberId) ?? members.find((m) => m.pendingPaise > 0) ?? members[0];
@@ -94,6 +97,12 @@ export function RecordPaymentForm({
         onChange={(e) => setNote(e.target.value)}
         placeholder="e.g. UPI, rest after salary"
       />
+      {!collectorName && memberId !== currentUserId && (
+        <p className="text-xs text-foreground/55 rounded-xl bg-primary/10 px-3 py-2">
+          {members.find((m) => m.userId === memberId)?.name.split(" ")[0] ?? "They"} gets a notification to approve this. It counts
+          once they do, and the history keeps who recorded and who approved it.
+        </p>
+      )}
       {collectorName && (
         <p className="text-xs text-foreground/55 rounded-xl bg-accent/10 px-3 py-2">
           {collectorName} will confirm once they&apos;ve received it. Until then it shows as waiting.

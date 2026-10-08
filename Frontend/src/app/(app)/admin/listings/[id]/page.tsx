@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
-import { ReasonModal } from "@/components/admin/ReasonModal";
+import { ReasonModal } from "@/components/ui/ReasonModal";
 import { LoadingState } from "@/components/ui/Skeleton";
 
 interface AdminListing extends Omit<ListingDetail, "is_mine"> {

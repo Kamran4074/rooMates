@@ -11,9 +11,12 @@ import { getMemberIds } from "../rooms/rooms.repository";
 // it's spent on shared things, and when it's closed the leftover is settled
 // so everyone has paid the same share of what was spent.
 //
-// Trust model: money counts only once it has changed hands. The collector
-// (or room admin) recording a payment confirms it; a member recording their
-// own payment waits for the collector to confirm it.
+// Trust model: a payment counts only once both sides agree.
+//   member records their own payment        -> collector/admin confirms it
+//   collector/admin records a member's one  -> that member approves it (or disputes it)
+//   collector/admin records their own one   -> counts at once
+// Who recorded, who confirmed and when, and any dispute are all kept on the
+// entry - the fund history is the proof.
 
 interface FundRow {
   id: string;
@@ -69,6 +72,7 @@ async function entryTotals(client: PoolClient, roomId: string, fundId?: string) 
      FROM fund_entries e
      JOIN room_funds f ON f.id = e.fund_id
      WHERE f.room_id = $1 AND ($2::uuid IS NULL OR f.id = $2) AND e.kind IN ('contribution', 'spend')
+       AND e.disputed_at IS NULL
      GROUP BY e.fund_id, e.kind, e.member_id, e.confirmed`,
     [roomId, fundId ?? null]
   );
@@ -149,11 +153,13 @@ export async function getFund(userId: string, roomId: string, fundId: string) {
     const entries = await client.query(
       `SELECT e.id, e.kind, e.member_id, m.name AS member_name, e.amount_paise::float8 AS amount_paise,
               e.note, e.confirmed, e.created_by, c.name AS created_by_name, e.created_at,
-              cb.name AS confirmed_by_name, e.confirmed_at
+              cb.name AS confirmed_by_name, e.confirmed_at,
+              e.disputed_at, db.name AS disputed_by_name, e.dispute_note
        FROM fund_entries e
        LEFT JOIN users m ON m.id = e.member_id
        LEFT JOIN users c ON c.id = e.created_by
        LEFT JOIN users cb ON cb.id = e.confirmed_by
+       LEFT JOIN users db ON db.id = e.disputed_by
        WHERE e.fund_id = $1
        ORDER BY e.created_at DESC`,
       [fundId]
@@ -218,40 +224,119 @@ export async function addContribution(userId: string, roomId: string, fundId: st
     requireOpen(fund);
     if (!fund.participant_ids.includes(input.memberId)) throw new AppError("That person isn't part of this fund", 400);
 
-    // The collector/admin is the one receiving the money, so their record is
-    // the confirmation. Anyone else can only record their own payment, and
-    // it waits until the collector confirms they got it.
+    // Members record only their own payments; the collector/admin can record anyone's.
     const manager = canManage(fund, userId);
     if (input.memberId !== userId && !manager) {
       throw new AppError("You can only record your own payments", 403);
     }
 
+    // Both sides agree at once only when the collector/admin records their own
+    // payment. Otherwise it waits for the other side: the member for a record
+    // made about them, the collector for a member's own record.
+    const confirmed = manager && input.memberId === userId;
     const id = crypto.randomUUID();
     await client.query(
-      // A manager's own record is confirmed on the spot: they are the one who got the money.
       `INSERT INTO fund_entries (id, fund_id, kind, member_id, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
        VALUES ($1, $2, 'contribution', $3, $4, $5, $6, $7,
                CASE WHEN $6 THEN $7::uuid END, CASE WHEN $6 THEN now() END)`,
-      [id, fundId, input.memberId, toPaise(input.amount), input.note || null, manager, userId]
+      [id, fundId, input.memberId, toPaise(input.amount), input.note || null, confirmed, userId]
     );
-    return { id, confirmed: manager };
+    const waitingFor = confirmed ? null : input.memberId === userId ? ("collector" as const) : ("member" as const);
+    return { id, confirmed, waitingFor };
   });
 }
 
-// Confirms a member's payment ("yes, I got it") or, after closing, marks a
-// refund/collection as done.
+interface EntryRow {
+  kind: "contribution" | "spend" | "refund" | "collection";
+  member_id: string | null;
+  created_by: string;
+  confirmed: boolean;
+  disputed_at: Date | null;
+  amount_paise: string;
+}
+
+async function loadEntry(client: PoolClient, fundId: string, entryId: string): Promise<EntryRow> {
+  const { rows } = await client.query<EntryRow>(
+    "SELECT kind, member_id, created_by, confirmed, disputed_at, amount_paise FROM fund_entries WHERE id = $1 AND fund_id = $2 FOR UPDATE",
+    [entryId, fundId]
+  );
+  if (!rows[0]) throw new AppError("Entry not found", 404);
+  return rows[0];
+}
+
+// A payment recorded by the collector/admin about someone else: that person
+// is the one who approves or disputes it.
+const recordedAboutMember = (e: EntryRow) => e.kind === "contribution" && e.created_by !== e.member_id;
+
+// "Yes, that's right": the other side of a payment agrees.
+//   - a member's own record           -> the collector/admin confirms ("I got it")
+//   - the collector's record about you -> you approve it ("yes, I paid that")
+//   - after closing, a refund/collection -> the collector/admin marks it done
 export async function confirmEntry(userId: string, roomId: string, fundId: string, entryId: string) {
   return withUserContext(userId, async (client) => {
     const fund = await loadFund(client, roomId, fundId, userId);
-    requireManager(fund, userId);
-    const { rows } = await client.query<{ kind: string }>(
-      `UPDATE fund_entries SET confirmed = true, confirmed_by = $3, confirmed_at = now()
-       WHERE id = $1 AND fund_id = $2 AND NOT confirmed AND kind <> 'spend' RETURNING kind`,
-      [entryId, fundId, userId]
-    );
-    if (!rows[0]) throw new AppError("Nothing to confirm - it may already be confirmed", 409);
-    if (rows[0].kind === "contribution") requireOpen(fund); // rolls the update back if closed
+    const entry = await loadEntry(client, fundId, entryId);
+    if (entry.kind === "spend") throw new AppError("Spends don't need confirming", 400);
+    if (entry.confirmed) throw new AppError("Nothing to confirm - it's already confirmed", 409);
+    if (entry.disputed_at) throw new AppError("This payment was disputed. Record a corrected one instead.", 409);
+
+    if (recordedAboutMember(entry)) {
+      if (entry.member_id !== userId) {
+        throw new AppError("Only the person this payment is for can approve it", 403);
+      }
+    } else {
+      requireManager(fund, userId);
+    }
+    if (entry.kind === "contribution") requireOpen(fund);
+
+    await client.query("UPDATE fund_entries SET confirmed = true, confirmed_by = $2, confirmed_at = now() WHERE id = $1", [
+      entryId,
+      userId,
+    ]);
     return { id: entryId, confirmed: true };
+  });
+}
+
+// "That's not right": the member says the collector's record about them is
+// wrong (wrong amount, never paid). It stops counting but is kept - with who
+// disputed it, when and why - and can't be deleted.
+export async function disputeEntry(userId: string, roomId: string, fundId: string, entryId: string, note: string) {
+  return withUserContext(userId, async (client) => {
+    const fund = await loadFund(client, roomId, fundId, userId);
+    requireOpen(fund);
+    const entry = await loadEntry(client, fundId, entryId);
+    if (!recordedAboutMember(entry) || entry.member_id !== userId) {
+      throw new AppError("You can only dispute a payment someone else recorded for you", 403);
+    }
+    if (entry.confirmed) throw new AppError("You already approved this payment", 409);
+    if (entry.disputed_at) throw new AppError("You already disputed this payment", 409);
+
+    await client.query(
+      "UPDATE fund_entries SET disputed_at = now(), disputed_by = $2, dispute_note = $3 WHERE id = $1",
+      [entryId, userId, note]
+    );
+    return { id: entryId, disputed: true };
+  });
+}
+
+// Payments the collector/admin recorded for me that I haven't approved yet,
+// across every room I'm in (RLS keeps it to my rooms). Shown on Expenses.
+export async function listMyPendingApprovals(userId: string) {
+  return withUserContext(userId, async (client) => {
+    const { rows } = await client.query(
+      `SELECT e.id, e.fund_id, f.name AS fund_name, f.room_id, r.name AS room_name, r.type AS room_type,
+              e.amount_paise::float8 AS amount_paise, e.note, e.created_at,
+              e.created_by, COALESCE(c.name, 'Former member') AS recorded_by_name
+       FROM fund_entries e
+       JOIN room_funds f ON f.id = e.fund_id
+       JOIN rooms r ON r.id = f.room_id
+       LEFT JOIN users c ON c.id = e.created_by
+       WHERE e.member_id = $1 AND e.kind = 'contribution' AND NOT e.confirmed AND e.disputed_at IS NULL
+         AND e.created_by <> $1 AND f.status = 'open'
+       ORDER BY e.created_at`,
+      [userId]
+    );
+    return rows;
   });
 }
 
@@ -281,12 +366,10 @@ export async function deleteEntry(userId: string, roomId: string, fundId: string
   return withUserContext(userId, async (client) => {
     const fund = await loadFund(client, roomId, fundId, userId, true);
     requireOpen(fund);
-    const { rows } = await client.query<{ kind: string; amount_paise: string; created_by: string; confirmed: boolean }>(
-      "SELECT kind, amount_paise, created_by, confirmed FROM fund_entries WHERE id = $1 AND fund_id = $2",
-      [entryId, fundId]
-    );
-    const entry = rows[0];
-    if (!entry) throw new AppError("Entry not found", 404);
+    const entry = await loadEntry(client, fundId, entryId);
+    if (entry.disputed_at) {
+      throw new AppError("A disputed payment stays in the history as a record. Record a corrected payment instead.", 409);
+    }
     const rejectingPending = entry.kind === "contribution" && !entry.confirmed && canManage(fund, userId);
     if (entry.created_by !== userId && !rejectingPending) {
       throw new AppError("Only the person who recorded this can delete it", 403);

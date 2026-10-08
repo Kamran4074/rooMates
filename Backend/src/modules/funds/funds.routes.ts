@@ -8,6 +8,7 @@ import {
   handlePreviewClose,
   handleCreateFund,
   handleDeleteEntry,
+  handleDisputeEntry,
   handleGetFund,
   handleListFunds,
 } from "./funds.controller";
@@ -24,6 +25,7 @@ router.post("/:fundId/contributions", handleAddContribution);
 router.post("/:fundId/spends", handleAddSpend);
 router.delete("/:fundId/entries/:entryId", handleDeleteEntry);
 router.post("/:fundId/entries/:entryId/confirm", handleConfirmEntry);
+router.post("/:fundId/entries/:entryId/dispute", handleDisputeEntry);
 router.get("/:fundId/close-preview", handlePreviewClose);
 router.post("/:fundId/close", handleClose);
 

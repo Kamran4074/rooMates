@@ -13,7 +13,7 @@ import { createRoomSchema, joinRoomSchema } from "../modules/rooms/rooms.schema"
 import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchema } from "../modules/expenses/expenses.schema";
 import { profileSchema } from "../modules/users/users.schema";
 import { contactSchema } from "../modules/contact/contact.schema";
-import { contributionSchema, createFundSchema, spendSchema } from "../modules/funds/funds.schema";
+import { contributionSchema, createFundSchema, disputeSchema, spendSchema } from "../modules/funds/funds.schema";
 import { createSettlementSchema } from "../modules/settlements/settlements.schema";
 import {
   createListingSchema,
@@ -889,12 +889,19 @@ route("get", "/api/admin/rooms/{id}", "Admin", "Read-only view of any room: memb
 route("get", "/api/admin/audit-logs", "Admin", "Who did what, newest first", { query: pageQuery, errors: adminOnly });
 
 const fundEntryParams = z.object({ roomId: z.string().uuid(), fundId: z.string().uuid(), entryId: z.string().uuid() });
-route("post", "/api/rooms/{roomId}/funds/{fundId}/entries/{entryId}/confirm", "Funds", "Collector/room admin: confirm a payment a member recorded, or mark a closing refund/collection as done", {
+route("post", "/api/rooms/{roomId}/funds/{fundId}/entries/{entryId}/confirm", "Funds", "The other side agrees: the collector/admin confirms a member's own record; the member approves a record the collector made for them; the collector marks a closing refund/collection done", {
   params: fundEntryParams,
   status: 200,
   ok: z.object({ id: z.string().uuid(), confirmed: z.literal(true) }),
-  errors: { 403: "Not the collector or room admin", 409: "Already confirmed, or the fund is closed" },
+  errors: { 403: "Not the other side of this payment", 409: "Already confirmed, disputed, or the fund is closed" },
 });
+route("post", "/api/rooms/{roomId}/funds/{fundId}/entries/{entryId}/dispute", "Funds", "Member disputes a payment the collector recorded for them. It stops counting and is kept (can't be deleted)", {
+  params: fundEntryParams,
+  body: disputeSchema,
+  status: 200,
+  errors: { 403: "Not a record made for you", 409: "Already approved or disputed" },
+});
+route("get", "/api/fund-approvals", "Funds", "Payments the collector/admin recorded for me, waiting for my approval, across all my rooms", {});
 route("get", "/api/rooms/{roomId}/funds/{fundId}/close-preview", "Funds", "What closing would do: each person's equal share of the spending and who gets money back or owes", {
   params: fundParams,
   errors: { 403: "Not the collector or room admin", 409: "Already closed" },

@@ -14,7 +14,11 @@ export interface CreateFundInput {
 export const createFund = (roomId: string, input: CreateFundInput) =>
   apiAuthPost<{ id: string }>(`/api/rooms/${roomId}/funds`, input);
 
-/** Collector/admin: "yes, I got this payment", or after closing: "this refund/collection is done". */
+/**
+ * The other side agrees: the collector confirms a member's own record, the
+ * member approves a record the collector made for them, or (after closing)
+ * the collector marks a refund/collection done.
+ */
 export const confirmFundEntry = (roomId: string, fundId: string, entryId: string) =>
   apiAuthPost(`${base(roomId, fundId)}/entries/${entryId}/confirm`, {});
 
@@ -23,3 +27,7 @@ export const deleteFundEntry = (roomId: string, fundId: string, entryId: string)
   apiAuthDelete(`${base(roomId, fundId)}/entries/${entryId}`);
 
 export const closeFund = (roomId: string, fundId: string) => apiAuthPost(`${base(roomId, fundId)}/close`, {});
+
+/** The member says the collector's record about them is wrong. */
+export const disputeFundEntry = (roomId: string, fundId: string, entryId: string, note: string) =>
+  apiAuthPost(`${base(roomId, fundId)}/entries/${entryId}/dispute`, { note });

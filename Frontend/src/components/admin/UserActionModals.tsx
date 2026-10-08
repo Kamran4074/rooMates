@@ -1,7 +1,7 @@
 "use client";
 
 import { deleteUser, suspendUser } from "@/services/adminApi";
-import { ReasonModal } from "./ReasonModal";
+import { ReasonModal } from "@/components/ui/ReasonModal";
 
 export type UserAction = { type: "suspend" | "delete"; user: { id: string; name: string } } | null;
 

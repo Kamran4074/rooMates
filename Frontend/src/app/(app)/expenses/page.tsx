@@ -11,6 +11,7 @@ import type { MyExpense } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { FundApprovalsCard } from "@/components/funds/FundApprovalsCard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -72,6 +73,8 @@ function Expenses() {
           </Button>
         }
       />
+
+      <FundApprovalsCard />
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-1 rounded-full border border-card-border bg-card p-1">

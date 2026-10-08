@@ -104,7 +104,9 @@ describe("upfront kitty", () => {
     const res = await api(admin, "POST", base(), { name: "Week 2", amountPerMember: 1000, participantIds: [admin.id, bhavya.id, chirag.id] });
     const id = res.body.data.id;
     await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: admin.id, amount: 1000 });
-    await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: bhavya.id, amount: 1000 });
+    // Recorded by the admin for Bhavya: counts once Bhavya approves it.
+    const forBhavya = await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: bhavya.id, amount: 1000 });
+    await api(bhavya, "POST", `${base()}/${id}/entries/${forBhavya.body.data.id}/confirm`);
     await api(admin, "POST", `${base()}/${id}/spends`, { description: "Food", amount: 1500 }); // ₹500 each; Chirag paid 0
     const preview = await api(admin, "GET", `${base()}/${id}/close-preview`);
     // Order follows participant order, which isn't meaningful - compare as a set.

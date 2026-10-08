@@ -39,13 +39,13 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - A unique Indian mobile number is required, to stop people farming free rooms with throwaway emails
 
 **Expense rooms**
-- Rooms for flatmates or trips, joined with an invite code that only the room admin can see or reset
+- Rooms for flatmates or groups for trips (whoever creates one is its admin), joined with an invite code that only the room admin can see or reset
 - The admin can remove members (only once they're settled up; the invite code rotates automatically)
 - Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
 - **Settle up for real:** "Mark as paid" on a suggested payment (or record any payment) and the balances update. One of the two people or the room admin records it
 - Delete a wrong expense or payment (whoever added it, or the room admin). It's a soft delete: the record stays with who deleted it and when
-- Room fund ("kitty"): ₹X per person paid upfront to one collector, partial payments, spending from the pool. Payments a member records themselves count only after the collector confirms them. Closing the fund settles the leftover so everyone paid an equal share of what was spent
+- Room fund ("kitty"): ₹X per person paid upfront to one collector, partial payments, spending from the pool. **A payment counts only when both sides agree:** a member's own record is confirmed by the collector; a payment the collector/admin records for a member is approved by that member (they get a notification on Dashboard/Expenses and a sidebar badge) or disputed with a reason. Disputed entries never count and can't be deleted; the history shows who recorded, who approved and when. Closing the fund settles the leftover so everyone paid an equal share of what was spent
 - Monthly expenses view and month-by-month history across rooms
 
 **Room listings**
@@ -257,6 +257,7 @@ Main groups:
 | Auth | `POST /api/auth/signup`, `/verify-email`, `/login`, `/google`, `/refresh`, `/logout`, `/forgot-password`, `/reset-password` |
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
 | Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
+| Fund approvals | `GET /api/fund-approvals`, `POST /api/rooms/:id/funds/:fundId/entries/:entryId/confirm`, `.../dispute` |
 | Settle up | `GET/POST /api/rooms/:id/settlements`, `DELETE /api/rooms/:id/settlements/:settlementId` |
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
 | Listings | `GET /api/listings?city=&minRent=&maxRent=&roomType=`, `GET /api/listings/nearby?lat=&lng=&radiusKm=`, `GET /api/listings/mine`, `POST/PATCH/DELETE /api/listings/:id`, `POST /api/listings/:id/status`, photos, reports |

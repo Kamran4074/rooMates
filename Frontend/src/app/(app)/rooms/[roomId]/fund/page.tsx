@@ -8,7 +8,9 @@ import { errorMessage } from "@/lib/api";
 import { rupees } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
 import type { Fund, FundDetail, FundEntry, Member, Room } from "@/lib/types";
-import { confirmFundEntry, deleteFundEntry } from "@/services/fundsApi";
+import { confirmFundEntry, deleteFundEntry, disputeFundEntry } from "@/services/fundsApi";
+import { ReasonModal } from "@/components/ui/ReasonModal";
+import { useApprovalsStore } from "@/store/approvalsStore";
 import { useAuthStore } from "@/store/authStore";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -39,6 +41,7 @@ export default function RoomFundPage() {
   const [modal, setModal] = useState<ModalState>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
+  const [disputing, setDisputing] = useState<FundEntry | null>(null);
 
   const roomQuery = useApiQuery<Room>(`/api/rooms/${roomId}`);
   const membersQuery = useApiQuery<Member[]>(`/api/rooms/${roomId}/members`);
@@ -54,6 +57,7 @@ export default function RoomFundPage() {
     setActionError(null);
     fundsQuery.reload();
     detailQuery.reload();
+    useApprovalsStore.getState().load(); // the sidebar badge / approvals card
   }
 
   async function run(action: () => Promise<unknown>, failure: string) {
@@ -200,7 +204,7 @@ export default function RoomFundPage() {
               <FundMembersCard fund={fund} currentUserId={user?.id} onRecord={(memberId) => setModal({ kind: "pay", memberId })} />
             </div>
             <div className="lg:col-span-2">
-              <FundHistory fund={fund} currentUserId={user?.id} onConfirm={confirmEntry} onDelete={deleteEntry} />
+              <FundHistory fund={fund} currentUserId={user?.id} onConfirm={confirmEntry} onDelete={deleteEntry} onDispute={setDisputing} />
             </div>
           </div>
         </>
@@ -227,9 +231,30 @@ export default function RoomFundPage() {
               members={fund.members.filter((m) => fund.canManage || m.userId === user?.id)}
               initialMemberId={modal?.kind === "pay" ? modal.memberId : undefined}
               collectorName={fund.canManage ? undefined : fund.collector.name}
+              currentUserId={user?.id}
               onDone={refresh}
             />
           </Modal>
+          <ReasonModal
+            open={!!disputing}
+            title="Dispute this payment?"
+            label="What's wrong?"
+            confirmLabel="Dispute payment"
+            danger
+            description={
+              disputing && (
+                <>
+                  {disputing.created_by_name ?? "The collector"} recorded that you paid {rupees(disputing.amount_paise)}. A disputed payment
+                  doesn&apos;t count, and it stays in the history with your reason.
+                </>
+              )
+            }
+            onClose={() => setDisputing(null)}
+            onConfirm={async (note) => {
+              await disputeFundEntry(roomId, fund.id, disputing!.id, note);
+              refresh();
+            }}
+          />
           <Modal open={modal?.kind === "spend"} onClose={() => setModal(null)} title="Spend from the fund">
             <SpendFromFundForm roomId={roomId} fundId={fund.id} balancePaise={fund.balancePaise} onDone={refresh} />
           </Modal>

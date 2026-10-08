@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useRequireAuth } from "@/lib/auth";
 import { useRoomsStore } from "@/store/roomsStore";
+import { useApprovalsStore } from "@/store/approvalsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { AdminSidebar } from "@/components/app/AdminSidebar";
@@ -22,6 +23,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // console, not the member pages (rooms, expenses, history, listings).
   const adminElsewhere = isAdmin && !pathname.startsWith("/admin") && pathname !== "/settings";
   const loadRooms = useRoomsStore((s) => s.load);
+  const loadApprovals = useApprovalsStore((s) => s.load);
   const modal = useRoomModal((s) => s.open);
   const closeModal = useRoomModal((s) => s.close);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -29,6 +31,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (ready && !isAdmin) loadRooms();
   }, [ready, isAdmin, loadRooms]);
+
+  // Payments waiting for my approval: re-checked on every page change, so a
+  // new one shows up (sidebar badge + card) without a full reload.
+  useEffect(() => {
+    if (ready && !isAdmin) loadApprovals();
+  }, [ready, isAdmin, pathname, loadApprovals]);
 
   useEffect(() => {
     if (ready && adminElsewhere) router.replace("/admin");
@@ -64,7 +72,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 px-4 sm:px-8 py-8 max-w-6xl w-full mx-auto">{children}</main>
       </div>
 
-      <Modal open={modal === "create"} onClose={closeModal} title="Create a room">
+      <Modal open={modal === "create"} onClose={closeModal} title="Create a room or group">
         <CreateRoomForm onCreated={(room) => openRoom(room.id)} />
       </Modal>
       <Modal open={modal === "join"} onClose={closeModal} title="Join a room">

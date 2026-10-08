@@ -118,6 +118,28 @@ export interface FundEntry {
   created_by: string;
   created_by_name: string | null;
   created_at: string;
+  /** Who agreed it's right, and when (the other side of the payment). */
+  confirmed_by_name: string | null;
+  confirmed_at: string | null;
+  /** The member said the collector's record about them is wrong. Never counts; kept as a record. */
+  disputed_at: string | null;
+  disputed_by_name: string | null;
+  dispute_note: string | null;
+}
+
+/** A payment the collector/admin recorded for me, waiting for my approval (GET /api/fund-approvals). */
+export interface FundApproval {
+  id: string;
+  fund_id: string;
+  fund_name: string;
+  room_id: string;
+  room_name: string;
+  room_type: RoomType;
+  amount_paise: number;
+  note: string | null;
+  created_at: string;
+  created_by: string;
+  recorded_by_name: string;
 }
 
 export interface FundDetail extends Fund {

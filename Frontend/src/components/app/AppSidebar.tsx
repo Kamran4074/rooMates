@@ -7,12 +7,14 @@ import { Logo } from "@/components/Logo";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
+import { useApprovalsStore } from "@/store/approvalsStore";
 import { NavLink } from "./NavLink";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const rooms = useRoomsStore((s) => s.rooms);
   const showModal = useRoomModal((s) => s.show);
+  const approvals = useApprovalsStore((s) => s.items.length);
 
   return (
     <nav className="h-full flex flex-col gap-6 p-4 overflow-y-auto" onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>
@@ -26,6 +28,11 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
         <NavLink href="/expenses" active={pathname === "/expenses"}>
           <Receipt className="h-4 w-4" /> Expenses
+          {approvals > 0 && (
+            <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-primary text-background text-xs font-semibold inline-flex items-center justify-center" aria-label={`${approvals} payments to approve`}>
+              {approvals}
+            </span>
+          )}
         </NavLink>
         <NavLink href="/history" active={pathname === "/history"}>
           <History className="h-4 w-4" /> History

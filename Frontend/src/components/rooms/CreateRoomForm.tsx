@@ -20,11 +20,14 @@ const types: { value: RoomType; label: string; hint: string; icon: typeof HomeIc
   { value: "trip", label: "Trip / event", hint: "One-off, settle at the end", icon: Plane },
 ];
 
-export function CreateRoomForm({ onCreated, submitLabel = "Create room" }: { onCreated: (room: CreatedRoom) => void; submitLabel?: string }) {
+export function CreateRoomForm({ onCreated, submitLabel }: { onCreated: (room: CreatedRoom) => void; submitLabel?: string }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<RoomType>("roommates");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // A flat is a "room"; a trip is a "group" - same thing underneath.
+  const noun = type === "trip" ? "group" : "room";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +36,7 @@ export function CreateRoomForm({ onCreated, submitLabel = "Create room" }: { onC
     try {
       onCreated(await apiAuthPost<CreatedRoom>("/api/rooms", { name, type }));
     } catch (err) {
-      setError(errorMessage(err, "Failed to create room"));
+      setError(errorMessage(err, `Failed to create the ${noun}`));
     } finally {
       setSubmitting(false);
     }
@@ -58,7 +61,7 @@ export function CreateRoomForm({ onCreated, submitLabel = "Create room" }: { onC
         ))}
       </div>
       <TextField
-        label="Room name"
+        label={type === "trip" ? "Group name" : "Room name"}
         required
         maxLength={100}
         value={name}
@@ -67,7 +70,7 @@ export function CreateRoomForm({ onCreated, submitLabel = "Create room" }: { onC
       />
       <FormMessage error={error} />
       <Button type="submit" variant="dark" loading={submitting}>
-        {submitting ? "Creating..." : submitLabel}
+        {submitting ? "Creating..." : (submitLabel ?? `Create ${noun}`)}
       </Button>
     </form>
   );
