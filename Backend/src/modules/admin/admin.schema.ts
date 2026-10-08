@@ -8,7 +8,11 @@ const userFilters = {
   sort: z.enum(["newest", "oldest", "last_active", "least_active"]).optional(),
 };
 
-export const usersQuery = paginationQuery.extend(userFilters);
+export const usersQuery = paginationQuery.extend({
+  ...userFilters,
+  // owners = group owners + people in no group (members are listed under their owner)
+  view: z.enum(["owners", "all"]).optional(),
+});
 
 export const onboardingQuery = paginationQuery.extend({
   search: z.string().trim().max(100).optional(),

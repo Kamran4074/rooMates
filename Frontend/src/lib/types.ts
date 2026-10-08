@@ -294,10 +294,14 @@ export interface AdminUser {
   plan: "free" | "paid";
   listing_count: number;
   room_count: number;
+  /** Groups they run (they're the room admin). */
+  owned_group_count: number;
+  /** Distinct other people in the groups they run. */
+  people_in_groups: number;
 }
 
 /** GET /api/admin/users/:id */
-export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room_count"> {
+export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room_count" | "owned_group_count" | "people_in_groups"> {
   email_verified: boolean;
   max_rooms: number;
   active_sessions: number;

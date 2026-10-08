@@ -23,8 +23,8 @@ export async function handleStats(_req: Request, res: Response) {
 }
 
 export async function handleUsers(req: Request, res: Response) {
-  const { search, status, sort, page, limit } = usersQuery.parse(req.query);
-  const { data, pagination } = await admin.listUsers({ search, status, sort }, { page, limit });
+  const { search, status, sort, view, page, limit } = usersQuery.parse(req.query);
+  const { data, pagination } = await admin.listUsers({ search, status, sort, view }, { page, limit });
   sendSuccess(res, data, { pagination });
 }
 
@@ -45,6 +45,10 @@ export async function handleExportUsers(req: Request, res: Response) {
       "Cache-Control": "no-store",
     })
     .send(csv);
+}
+
+export async function handleOwnedGroups(req: Request, res: Response) {
+  sendSuccess(res, await admin.listOwnedGroups(id(req)));
 }
 
 export async function handleUser(req: Request, res: Response) {

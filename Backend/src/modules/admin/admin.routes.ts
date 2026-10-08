@@ -16,6 +16,7 @@ router.get("/onboarding", c.handleOnboarding);
 router.get("/users", c.handleUsers);
 router.get("/users/export", c.handleExportUsers); // before /users/:id, or "export" is read as an id
 router.get("/users/:id", c.handleUser);
+router.get("/users/:id/groups", c.handleOwnedGroups);
 router.post("/users/:id/delete", c.handleDeleteUser);
 router.post("/users/:id/suspend", c.handleSuspend);
 router.post("/users/:id/unsuspend", c.handleUnsuspend);

@@ -835,6 +835,10 @@ route("get", "/api/admin/users/export", "Admin", "Download the filtered users li
   query: usersExportQuery,
   errors: adminOnly,
 });
+route("get", "/api/admin/users/{id}/groups", "Admin", "The groups this person runs, each with its members (the expanded row in the users table)", {
+  params: idParams,
+  errors: adminOnly,
+});
 route("get", "/api/admin/users/{id}", "Admin", "One account for support: profile, groups (size + their balance), listings, active sessions, admin history", {
   params: idParams,
   errors: { ...adminOnly, 404: "No such user" },

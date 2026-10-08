@@ -59,6 +59,32 @@ describe("users list and detail", () => {
   });
 });
 
+describe("owners view", () => {
+  it("lists group owners and people in no group; members only appear under their owner", async () => {
+    const [owner, member, loner] = await Promise.all([createUser(), createUser(), createUser()]);
+    const room = await api(owner, "POST", "/api/rooms", { name: "Owner's flat", type: "roommates" });
+    await api(member, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+
+    const owners = async (u: TestUser) => (await api(admin, "GET", `/api/admin/users?view=owners&search=${u.email}`)).body.data;
+    expect(await owners(owner)).toEqual([expect.objectContaining({ id: owner.id, owned_group_count: 1, people_in_groups: 1 })]);
+    expect(await owners(loner)).toEqual([expect.objectContaining({ id: loner.id, owned_group_count: 0 })]);
+    expect(await owners(member)).toEqual([]);
+    // The flat list still has everyone.
+    expect((await api(admin, "GET", `/api/admin/users?search=${member.email}`)).body.data).toHaveLength(1);
+
+    const groups = await api(admin, "GET", `/api/admin/users/${owner.id}/groups`);
+    expect(groups.body.data).toEqual([
+      expect.objectContaining({
+        name: "Owner's flat",
+        members: [
+          expect.objectContaining({ id: owner.id, role: "admin" }),
+          expect.objectContaining({ id: member.id, role: "member" }),
+        ],
+      }),
+    ]);
+  });
+});
+
 describe("CSV export", () => {
   it("exports the filtered users, neutralises spreadsheet formulas, and is audit-logged", async () => {
     const sneaky = await createUser();

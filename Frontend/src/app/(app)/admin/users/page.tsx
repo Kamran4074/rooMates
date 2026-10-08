@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
-import { Download, Eye, Search, Trash2, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Eye, Search, Trash2, Users } from "lucide-react";
 import { apiAuthDownload, errorMessage } from "@/lib/api";
 import { formatDate, timeAgo } from "@/lib/format";
-import { usePagedQuery } from "@/lib/useApiQuery";
+import { useApiQuery, usePagedQuery } from "@/lib/useApiQuery";
 import type { AdminUser } from "@/lib/types";
 import { unsuspendUser } from "@/services/adminApi";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { OwnerGroups } from "@/components/admin/OwnerGroups";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormMessage } from "@/components/ui/FormMessage";
@@ -25,8 +27,10 @@ import { UserAction, UserActionModals } from "@/components/admin/UserActionModal
 
 type Sort = "newest" | "oldest" | "last_active" | "least_active";
 
-// Every account in one table: contact, plan, profile, groups, last active,
-// an on/off switch (suspend / restore), and view / delete.
+// Accounts, by default grouped by who runs a group: owners (and people in no
+// group yet) are the rows; expanding one shows their groups and members.
+// "All accounts" (or any search) lists everyone flat. Each row has contact,
+// groups, last active, an on/off switch (suspend / restore), view / delete.
 export default function AdminUsersPage() {
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
@@ -37,9 +41,32 @@ export default function AdminUsersPage() {
   const [action, setAction] = useState<UserAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [view, setView] = useState<"owners" | "all">("owners");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // A search looks through everyone: a member is only nested under their
+  // owner, so the owners view would hide them.
+  const grouped = view === "owners" && !search;
   const filters = new URLSearchParams({ sort, ...(search && { search }), ...(status && { status }) });
-  const { data, error: loadError, reload } = usePagedQuery<AdminUser>(`/api/admin/users?${filters}&page=${page}&limit=${limit}`);
+  const { data, error: loadError, reload } = usePagedQuery<AdminUser>(
+    `/api/admin/users?${filters}&page=${page}&limit=${limit}${grouped ? "&view=owners" : ""}`
+  );
+  const totalAccounts = useApiQuery<{ total_users: number }>("/api/admin/stats").data?.total_users;
+
+  function toggleRow(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const groupsLabel = (u: AdminUser) =>
+    grouped
+      ? u.owned_group_count
+        ? `${u.owned_group_count} ${u.owned_group_count === 1 ? "group" : "groups"} · ${u.people_in_groups} ${u.people_in_groups === 1 ? "person" : "people"}`
+        : "No group"
+      : String(u.room_count);
 
   const manageable = (u: AdminUser) => u.role !== "super_admin" && !u.deleted_at;
   const firstRow = data ? (data.pagination.page - 1) * data.pagination.limit : 0;
@@ -77,7 +104,13 @@ export default function AdminUsersPage() {
     <>
       <PageHeader
         title="Users"
-        subtitle={data ? `${data.pagination.total} ${data.pagination.total === 1 ? "account" : "accounts"}` : undefined}
+        subtitle={
+          totalAccounts === undefined
+            ? undefined
+            : `${totalAccounts} ${totalAccounts === 1 ? "account" : "accounts"}${
+                grouped && data ? ` · ${data.pagination.total} shown (group owners and people in no group)` : ""
+              }`
+        }
         actions={
           <Button size="sm" onClick={exportCsv} loading={exporting}>
             <Download className="h-4 w-4" /> Export CSV
@@ -104,6 +137,16 @@ export default function AdminUsersPage() {
             className="w-full h-11 pl-10 pr-4 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary"
           />
         </form>
+        <div className="w-64">
+          <SegmentedControl
+            value={view}
+            onChange={(v) => { setView(v); setPage(1); setExpanded(new Set()); }}
+            options={[
+              { value: "owners", label: "Group owners" },
+              { value: "all", label: "All accounts" },
+            ]}
+          />
+        </div>
         <div className="w-44">
           <Select aria-label="Status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
             <option value="">Everyone</option>
@@ -114,6 +157,9 @@ export default function AdminUsersPage() {
           </Select>
         </div>
       </div>
+      {view === "owners" && search && (
+        <p className="text-xs text-foreground/55 mb-3">Searching all accounts, including people inside groups.</p>
+      )}
       <FormMessage error={error} />
 
       {loadError ? (
@@ -141,8 +187,23 @@ export default function AdminUsersPage() {
             </thead>
             <tbody>
               {data.items.map((u, i) => (
-                <tr key={u.id} className="hover:bg-foreground/3">
-                  <Td className="text-foreground/45 tabular-nums">{firstRow + i + 1}</Td>
+                <Fragment key={u.id}>
+                <tr className={`hover:bg-foreground/3 ${expanded.has(u.id) ? "bg-foreground/3" : ""}`}>
+                  <Td className="text-foreground/45 tabular-nums">
+                    {grouped && u.owned_group_count > 0 ? (
+                      <button
+                        onClick={() => toggleRow(u.id)}
+                        aria-expanded={expanded.has(u.id)}
+                        aria-label={`${expanded.has(u.id) ? "Hide" : "Show"} ${u.name}'s groups`}
+                        className="inline-flex items-center gap-1 rounded-lg px-1 -mx-1 hover:bg-foreground/5 hover:text-foreground"
+                      >
+                        {expanded.has(u.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {firstRow + i + 1}
+                      </button>
+                    ) : (
+                      <span className={grouped ? "pl-5" : ""}>{firstRow + i + 1}</span>
+                    )}
+                  </Td>
                   <Td>
                     <div className="flex items-center gap-3 min-w-56">
                       <Avatar name={u.name} picture={u.picture} size={36} />
@@ -159,7 +220,20 @@ export default function AdminUsersPage() {
                   <Td className="whitespace-nowrap">{u.phone ?? "—"}</Td>
                   <Td className="hidden 2xl:table-cell"><Badge tone={u.plan === "paid" ? "success" : "neutral"}>{u.plan}</Badge></Td>
                   <Td className="hidden 2xl:table-cell">{u.onboarding_completed ? <Badge tone="success">Yes</Badge> : <Badge tone="accent">No</Badge>}</Td>
-                  <Td align="right">{u.room_count}</Td>
+                  <Td align="right" className="whitespace-nowrap">
+                    {grouped && u.owned_group_count > 0 ? (
+                      <>
+                        <span className="block">
+                          {u.owned_group_count} {u.owned_group_count === 1 ? "group" : "groups"}
+                        </span>
+                        <span className="block text-xs text-foreground/50">
+                          {u.people_in_groups} {u.people_in_groups === 1 ? "person" : "people"}
+                        </span>
+                      </>
+                    ) : (
+                      groupsLabel(u)
+                    )}
+                  </Td>
                   <Td className="whitespace-nowrap text-foreground/70">{formatDate(u.created_at, "short")}</Td>
                   <Td className="whitespace-nowrap text-foreground/70">{timeAgo(u.last_active_at)}</Td>
                   <Td>
@@ -188,6 +262,14 @@ export default function AdminUsersPage() {
                     </div>
                   </Td>
                 </tr>
+                {grouped && expanded.has(u.id) && (
+                  <tr>
+                    <td colSpan={10} className="px-3 pb-4 border-b border-card-border">
+                      <OwnerGroups userId={u.id} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </Table>
@@ -207,7 +289,7 @@ export default function AdminUsersPage() {
                     </div>
                     <p className="text-xs text-foreground/55 truncate">{u.deleted_at ? "—" : u.email}</p>
                     <p className="text-xs text-foreground/45">
-                      Joined {formatDate(u.created_at, "short")} · Active {timeAgo(u.last_active_at)} · {u.room_count} groups
+                      Joined {formatDate(u.created_at, "short")} · Active {timeAgo(u.last_active_at)} · {groupsLabel(u)}
                     </p>
                     <div className="flex items-center gap-2 mt-2">
                       <Switch
@@ -226,7 +308,22 @@ export default function AdminUsersPage() {
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
+                      {grouped && u.owned_group_count > 0 && (
+                        <button
+                          onClick={() => toggleRow(u.id)}
+                          aria-expanded={expanded.has(u.id)}
+                          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-primary"
+                        >
+                          {expanded.has(u.id) ? "Hide group" : "Show group"}
+                          {expanded.has(u.id) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+                      )}
                     </div>
+                    {grouped && expanded.has(u.id) && (
+                      <div className="mt-3">
+                        <OwnerGroups userId={u.id} />
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}

@@ -61,7 +61,17 @@ export interface UserFilters {
   search?: string;
   status?: UserStatusFilter;
   sort?: UserSort;
+  /**
+   * "owners": only people who run a group, or aren't in any group yet - the
+   * accounts that stand on their own. Everyone who only joined someone else's
+   * group is listed under that owner instead (see listOwnedGroups).
+   */
+  view?: "owners" | "all";
 }
+
+// Runs a group, or isn't in one at all.
+const OWNERS_SQL = `(EXISTS (SELECT 1 FROM room_members rm WHERE rm.user_id = u.id AND rm.role = 'admin')
+                     OR NOT EXISTS (SELECT 1 FROM room_members rm WHERE rm.user_id = u.id))`;
 
 const USER_STATUS_SQL: Record<UserStatusFilter | "all", string> = {
   all: "u.deleted_at IS NULL",
@@ -87,9 +97,15 @@ function usersQuery(filters: UserFilters, limit: number, offset: number) {
             (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
             (SELECT COUNT(*)::int FROM listings l WHERE l.owner_id = u.id) AS listing_count,
             (SELECT COUNT(*)::int FROM room_members rm WHERE rm.user_id = u.id) AS room_count,
+            (SELECT COUNT(*)::int FROM room_members rm WHERE rm.user_id = u.id AND rm.role = 'admin') AS owned_group_count,
+            -- Distinct people in the groups they run (not counting themselves).
+            (SELECT COUNT(DISTINCT m.user_id)::int FROM room_members own
+               JOIN room_members m ON m.room_id = own.room_id AND m.user_id <> u.id
+              WHERE own.user_id = u.id AND own.role = 'admin') AS people_in_groups,
             COUNT(*) OVER() AS total_count
      FROM users u JOIN organizations o ON o.id = u.organization_id
      WHERE ${USER_STATUS_SQL[filters.status ?? "all"]}
+       AND ${filters.view === "owners" ? OWNERS_SQL : "true"}
        AND ($1::text IS NULL OR u.name ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%')
      ORDER BY ${USER_SORT_SQL[filters.sort ?? "newest"]}, u.id
      LIMIT $2 OFFSET $3`,
@@ -101,6 +117,28 @@ export async function listUsers(filters: UserFilters, page: PageParams) {
   const { limit, offset } = toLimitOffset(page);
   const { rows } = await usersQuery(filters, limit, offset);
   return paginate(rows, page);
+}
+
+// The groups someone runs, each with its members - what the users table shows
+// when an owner's row is expanded.
+export async function listOwnedGroups(userId: string) {
+  const { rows } = await adminPool.query(
+    `SELECT r.id, r.name, r.type, r.created_at,
+            COALESCE(json_agg(json_build_object(
+              'id', u.id, 'name', u.name, 'email', CASE WHEN u.deleted_at IS NULL THEN u.email END,
+              'phone', u.phone, 'picture', u.picture, 'role', m.role, 'joined_at', m.joined_at,
+              'last_active_at', u.last_active_at, 'suspended_at', u.suspended_at, 'deleted_at', u.deleted_at
+            ) ORDER BY m.role = 'admin' DESC, m.joined_at), '[]') AS members
+     FROM room_members own
+     JOIN rooms r ON r.id = own.room_id
+     JOIN room_members m ON m.room_id = r.id
+     JOIN users u ON u.id = m.user_id
+     WHERE own.user_id = $1 AND own.role = 'admin'
+     GROUP BY r.id
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+  return rows;
 }
 
 export const MAX_EXPORT_ROWS = 10_000;
