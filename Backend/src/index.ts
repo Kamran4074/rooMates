@@ -4,6 +4,7 @@ import { logger } from "./config/logger";
 import { pool, adminPool, warmUpPool } from "./config/db";
 import { runMigrations } from "./config/migrate";
 import { scheduleHousekeeping } from "./config/housekeeping";
+import { seedSuperAdmin } from "./config/superAdminSeed";
 
 async function start() {
   if (env.MIGRATE_ON_START) {
@@ -16,6 +17,9 @@ async function start() {
       process.exit(1);
     }
   }
+
+  // Never throws: a bad SUPER_ADMIN_* config is logged, not fatal.
+  await seedSuperAdmin();
 
   const server = app.listen(env.PORT, () => {
     logger.info(`Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);

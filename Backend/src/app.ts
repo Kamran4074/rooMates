@@ -13,6 +13,7 @@ import roomRoutes from "./modules/rooms/rooms.routes";
 import expenseRoutes from "./modules/expenses/expenses.routes";
 import myExpensesRoutes from "./modules/expenses/myExpenses.routes";
 import fundRoutes from "./modules/funds/funds.routes";
+import settlementRoutes from "./modules/settlements/settlements.routes";
 import userRoutes from "./modules/users/users.routes";
 import contactRoutes from "./modules/contact/contact.routes";
 import listingRoutes from "./modules/listings/listings.routes";
@@ -50,6 +51,7 @@ app.get("/api/health", async (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/rooms/:roomId/funds", fundRoutes);
+app.use("/api/rooms/:roomId/settlements", settlementRoutes);
 app.use("/api/rooms/:roomId", expenseRoutes);
 app.use("/api/expenses", myExpensesRoutes);
 app.use("/api/users", userRoutes);

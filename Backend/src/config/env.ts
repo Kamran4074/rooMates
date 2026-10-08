@@ -35,6 +35,14 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  // Break-glass super admin, applied on every start (see config/superAdminSeed.ts).
+  // Empty values count as "not set", so a blank line in .env doesn't stop the server.
+  SUPER_ADMIN_EMAIL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().trim().toLowerCase().email().optional()
+  ),
+  SUPER_ADMIN_PASSWORD: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  SUPER_ADMIN_NAME: z.string().trim().min(1).max(100).default("Super Admin"),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -64,6 +64,24 @@ export async function createExpense(userId: string, roomId: string, input: Creat
   });
 }
 
+// Soft delete: the row stays (who deleted it and when), but it drops out of
+// every list and balance. Whoever added it or the room admin may do this; the
+// RLS update policy enforces the same rule.
+export async function deleteExpense(userId: string, roomId: string, expenseId: string) {
+  return withUserContext(userId, async (client) => {
+    const role = await requireMember(client, roomId, userId);
+    const { rows } = await client.query<{ created_by: string }>(
+      "SELECT created_by FROM expenses WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL",
+      [expenseId, roomId]
+    );
+    if (!rows[0]) throw new AppError("Expense not found", 404);
+    if (rows[0].created_by !== userId && role !== "admin") {
+      throw new AppError("Only whoever added this expense or the room admin can delete it", 403);
+    }
+    await client.query("UPDATE expenses SET deleted_at = now(), deleted_by = $2 WHERE id = $1", [expenseId, userId]);
+  });
+}
+
 export async function listExpenses(userId: string, roomId: string, params: PageParams) {
   return withUserContext(userId, async (client) => {
     await requireMember(client, roomId, userId);
@@ -72,11 +90,11 @@ export async function listExpenses(userId: string, roomId: string, params: PageP
       // LEFT JOIN: once someone leaves the room, RLS hides their user row, but
       // the expenses they paid for are still part of the room's history.
       `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.expense_date::text AS expense_date, e.created_at,
-              COALESCE(u.name, 'Former member') AS paid_by_name,
+              e.created_by, COALESCE(u.name, 'Former member') AS paid_by_name,
               COUNT(*) OVER() AS total_count
        FROM expenses e
        LEFT JOIN users u ON u.id = e.paid_by
-       WHERE e.room_id = $1
+       WHERE e.room_id = $1 AND e.deleted_at IS NULL
        ORDER BY e.expense_date DESC, e.created_at DESC
        LIMIT $2 OFFSET $3`,
       [roomId, limit, offset]
@@ -92,17 +110,16 @@ export async function getRoomBalances(userId: string, roomId: string) {
 // Takes a client so it runs under whoever's context the caller set up: a
 // member's (RLS-scoped) in getRoomBalances, the super admin's in the admin module.
 export async function computeRoomBalances(client: PoolClient, roomId: string) {
-  // One query (one network round trip): each member's name and net balance =
-  // what they paid - the sum of their shares.
+  // One query: each member's name and net balance from room_ledger (what they
+  // paid - their shares + payments they made - payments they received; deleted
+  // expenses and payments excluded). Every balance in the app reads that view.
   const members = await client.query<{ user_id: string; name: string; net: string }>(
-    `SELECT rm.user_id, u.name,
-            COALESCE((SELECT SUM(e.amount_paise) FROM expenses e
-                      WHERE e.room_id = $1 AND e.paid_by = rm.user_id), 0)
-          - COALESCE((SELECT SUM(es.share_paise) FROM expense_splits es
-                      JOIN expenses e ON e.id = es.expense_id
-                      WHERE e.room_id = $1 AND es.user_id = rm.user_id), 0) AS net
+    `SELECT rm.user_id, u.name, COALESCE(l.net, 0) AS net
      FROM room_members rm
      JOIN users u ON u.id = rm.user_id
+     LEFT JOIN (
+       SELECT user_id, SUM(amount_paise) AS net FROM room_ledger WHERE room_id = $1 GROUP BY user_id
+     ) l ON l.user_id = rm.user_id
      WHERE rm.room_id = $1`,
     [roomId]
   );
@@ -151,7 +168,8 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
        JOIN rooms r ON r.id = e.room_id
        LEFT JOIN users u ON u.id = e.paid_by
        LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
-       WHERE e.expense_date >= $2::date
+       WHERE e.deleted_at IS NULL
+         AND e.expense_date >= $2::date
          AND e.expense_date <  ($2::date + interval '1 month')
          AND ($3::uuid IS NULL OR e.room_id = $3)
        ORDER BY e.expense_date DESC, e.created_at DESC`,
@@ -183,7 +201,7 @@ export async function getMonthlySummary(userId: string, roomId?: string) {
               SUM(COALESCE(es.share_paise, 0)) AS my_share_paise
        FROM expenses e
        LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
-       WHERE ($2::uuid IS NULL OR e.room_id = $2)
+       WHERE e.deleted_at IS NULL AND ($2::uuid IS NULL OR e.room_id = $2)
        GROUP BY 1
        ORDER BY 1 DESC`,
       [userId, roomId ?? null]

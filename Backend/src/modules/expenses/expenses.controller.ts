@@ -1,10 +1,11 @@
 import { Request, Response } from "express";
-import { roomIdParam } from "../../utils/validation";
+import { roomIdParam, uuidParam } from "../../utils/validation";
 import { paginationQuery } from "../../utils/pagination";
-import { sendCreated, sendSuccess } from "../../utils/response";
+import { sendCreated, sendNoContent, sendSuccess } from "../../utils/response";
 import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchema } from "./expenses.schema";
 import {
   createExpense,
+  deleteExpense,
   listExpenses,
   getRoomBalances,
   listMyExpenses,
@@ -15,6 +16,12 @@ export async function handleCreateExpense(req: Request, res: Response) {
   const roomId = roomIdParam.parse(req.params.roomId);
   const expense = await createExpense(req.auth!.sub, roomId, createExpenseSchema.parse(req.body));
   sendCreated(res, expense, "Expense added");
+}
+
+export async function handleDeleteExpense(req: Request, res: Response) {
+  const roomId = roomIdParam.parse(req.params.roomId);
+  await deleteExpense(req.auth!.sub, roomId, uuidParam("expense").parse(req.params.expenseId));
+  sendNoContent(res);
 }
 
 export async function handleListExpenses(req: Request, res: Response) {

@@ -14,6 +14,7 @@ import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchem
 import { profileSchema } from "../modules/users/users.schema";
 import { contactSchema } from "../modules/contact/contact.schema";
 import { contributionSchema, createFundSchema, spendSchema } from "../modules/funds/funds.schema";
+import { createSettlementSchema } from "../modules/settlements/settlements.schema";
 import {
   createListingSchema,
   listingStatusActionSchema,
@@ -324,7 +325,63 @@ registry.registerPath({
   security: [{ [bearerAuth.name]: [] }],
   request: { params: z.object({ roomId: z.string().uuid() }), query: pageQuery },
   responses: {
-    200: { description: "One page of expenses", content: { "application/json": { schema: page(z.object({ id: z.string().uuid(), description: z.string(), amount_paise: z.string(), paid_by: z.string().uuid(), paid_by_name: z.string(), created_at: z.string() })) } } },
+    200: { description: "One page of expenses", content: { "application/json": { schema: page(z.object({ id: z.string().uuid(), description: z.string(), amount_paise: z.string(), paid_by: z.string().uuid(), paid_by_name: z.string(), created_by: z.string().uuid(), expense_date: z.string().describe("YYYY-MM-DD"), created_at: z.string() })) } } },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/rooms/{roomId}/expenses/{expenseId}",
+  tags: ["Expenses"],
+  summary: "Delete an expense (soft delete: kept for history, dropped from lists and balances). Whoever added it or the room admin",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { params: z.object({ roomId: z.string().uuid(), expenseId: z.string().uuid() }) },
+  responses: {
+    204: { description: "Deleted" },
+    403: { description: "Not yours and you're not the room admin", content: { "application/json": { schema: errorResponseSchema } } },
+    404: { description: "No such (live) expense in this room", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/rooms/{roomId}/settlements",
+  tags: ["Settle up"],
+  summary: "Record a settle-up payment (A paid B). One of the two people or the room admin",
+  security: [{ [bearerAuth.name]: [] }],
+  request: {
+    params: z.object({ roomId: z.string().uuid() }),
+    body: { content: { "application/json": { schema: createSettlementSchema } } },
+  },
+  responses: {
+    201: { description: "Payment recorded; balances update immediately", content: { "application/json": { schema: z.object({ id: z.string().uuid(), fromUserId: z.string().uuid(), toUserId: z.string().uuid(), amountPaise: z.number(), settledOn: z.string() }) } } },
+    400: { description: "Same person twice, or someone outside the room", content: { "application/json": { schema: errorResponseSchema } } },
+    403: { description: "Not involved and not the room admin", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/rooms/{roomId}/settlements",
+  tags: ["Settle up"],
+  summary: "Recorded payments in a room, newest first (paginated)",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { params: z.object({ roomId: z.string().uuid() }), query: pageQuery },
+  responses: {
+    200: { description: "One page of payments", content: { "application/json": { schema: page(z.object({ id: z.string().uuid(), from_user_id: z.string().uuid(), from_name: z.string(), to_user_id: z.string().uuid(), to_name: z.string(), amount_paise: z.number(), settled_on: z.string(), note: z.string().nullable(), created_by: z.string().uuid(), created_at: z.string() })) } } },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/rooms/{roomId}/settlements/{settlementId}",
+  tags: ["Settle up"],
+  summary: "Delete a recorded payment (soft delete). Whoever recorded it or the room admin",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { params: z.object({ roomId: z.string().uuid(), settlementId: z.string().uuid() }) },
+  responses: {
+    204: { description: "Deleted; the debt is back in the balances" },
+    403: { description: "Not yours and you're not the room admin", content: { "application/json": { schema: errorResponseSchema } } },
   },
 });
 

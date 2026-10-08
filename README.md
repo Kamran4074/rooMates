@@ -43,6 +43,8 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - The admin can remove members (only once they're settled up; the invite code rotates automatically)
 - Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
+- **Settle up for real:** "Mark as paid" on a suggested payment (or record any payment) and the balances update. One of the two people or the room admin records it
+- Delete a wrong expense or payment (whoever added it, or the room admin). It's a soft delete: the record stays with who deleted it and when
 - Room fund ("kitty"): ₹X per person paid upfront to one collector, partial payments, spending from the pool. Payments a member records themselves count only after the collector confirms them. Closing the fund settles the leftover so everyone paid an equal share of what was spent
 - Monthly expenses view and month-by-month history across rooms
 
@@ -75,6 +77,7 @@ Business rules worth knowing: the free plan allows 2 created rooms per account; 
 - Reports: dismiss, resolve, or remove the listing
 - Suspend / restore accounts (ends their sessions)
 - Read-only view of any expense room, for support
+- Break-glass account from the environment: `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` are applied on every start, so a forgotten admin password is fixed by changing the env value and redeploying
 - Audit log of every admin action
 
 ## Tech stack
@@ -188,14 +191,16 @@ Frontend/src/
 |---|---|
 | `users`, `organizations` | accounts (role, suspension), billing tenant / room quota |
 | `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
-| `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it) and each member's share (integer paise) |
-| `room_funds`, `fund_participants`, `fund_entries` | kitty per room: collector and status; who's in it; one ledger of payments, spends and the closing refunds/collections (each marked confirmed once money changed hands) |
+| `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it; soft delete via `deleted_at`/`deleted_by`) and each member's share (integer paise) |
+| `settlements` | recorded settle-up payments: from, to, amount, `settled_on` (soft delete like expenses) |
+| `room_ledger` (view) | every money movement in a room as +/- per person; **all balances in the app read this one view** (room balances, dashboard, "is this member settled?"). `security_invoker`, so RLS still applies |
+| `room_funds`, `fund_participants`, `fund_entries` | kitty per room: collector and status; who's in it; one ledger of payments, spends and the closing refunds/collections (each marked confirmed once money changed hands, with `confirmed_by`/`confirmed_at`) |
 | `listings`, `listing_images` | room listings (status lifecycle, optional lat/lng) and photos |
 | `listing_requests`, `listing_reports` | interest requests (one per user per listing); user reports |
 | `refresh_tokens`, `otp_codes` | SHA-256 hashes only |
 | `audit_logs` | admin actions, written in the same transaction as the action |
 
-Indexes were added for the queries that actually run: `expenses (room_id, expense_date DESC, created_at DESC)`, `room_members (user_id)`, `expense_splits (user_id)`, `refresh_tokens (user_id)`, `fund_participants (user_id)`; listings by `(status, created_at)`, `(status, lower(city))`, `(status, pincode)`, `owner_id`, and a partial `(latitude, longitude)` index on published listings for "near me".
+Indexes were added for the queries that actually run: `expenses (room_id, expense_date DESC, created_at DESC) WHERE deleted_at IS NULL`, `expenses (paid_by)` and `settlements (room_id / from / to)` (live rows only), `rooms (organization_id)` for the room-quota check, `room_members (user_id)`, `expense_splits (user_id)`, `refresh_tokens (user_id)`, `fund_participants (user_id)`; listings by `(status, created_at)`, `(status, lower(city))`, `(status, pincode)`, `owner_id`, and a partial `(latitude, longitude)` index on published listings for "near me".
 
 **Money** is stored as integer paise. **Transactions** are used where several writes must succeed together, e.g. accepting a request + marking the listing rented + declining the other pending requests. **Races** are handled with single-statement check-and-set updates (refresh-token rotation, answering a request) or a row lock (spending from a fund can't overdraw it).
 
@@ -245,7 +250,8 @@ Main groups:
 |---|---|
 | Auth | `POST /api/auth/signup`, `/verify-email`, `/login`, `/google`, `/refresh`, `/logout`, `/forgot-password`, `/reset-password` |
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
-| Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
+| Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
+| Settle up | `GET/POST /api/rooms/:id/settlements`, `DELETE /api/rooms/:id/settlements/:settlementId` |
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
 | Listings | `GET /api/listings?city=&minRent=&maxRent=&roomType=`, `GET /api/listings/nearby?lat=&lng=&radiusKm=`, `GET /api/listings/mine`, `POST/PATCH/DELETE /api/listings/:id`, `POST /api/listings/:id/status`, photos, reports |
 | Requests | `POST /api/requests`, `GET /api/requests/sent`, `GET /api/requests/received`, `PATCH /api/requests/:id` |
@@ -271,6 +277,7 @@ npm run dev                # http://localhost:3000
 # Make yourself a super admin (after signing up)
 cd Backend
 npm run make-admin -- you@example.com
+# ...or set SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in .env: applied on every start
 ```
 
 ### Backend environment variables
@@ -288,6 +295,7 @@ npm run make-admin -- you@example.com
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `BREVO_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `CONTACT_INBOX` | Email |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Listing photos (optional) |
+| `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME` | Break-glass super admin, created/updated on every start (optional; password 12-72 chars; a changed password signs that account out everywhere) |
 
 ### Frontend environment variables
 

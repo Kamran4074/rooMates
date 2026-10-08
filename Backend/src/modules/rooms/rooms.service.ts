@@ -100,22 +100,17 @@ export async function listMyRooms(userId: string) {
   // this to the caller's rooms. That's the payoff of doing RLS properly: the
   // query can't accidentally leak another tenant's rooms.
   //
-  // my_net_paise (what I paid minus my shares, per room) is computed here in
+  // my_net_paise (my balance per room, from room_ledger) is computed here in
   // one query so the dashboard doesn't need a separate balances call per room.
   return withUserContext(userId, async (client) => {
     const result = await client.query<{ my_net_paise: string }>(
       `SELECT r.id, r.name, r.type, ${INVITE_CODE_FOR_ADMIN}, me.role AS my_role, r.created_by, r.created_at,
-              COALESCE(paid.total, 0) - COALESCE(owed.total, 0) AS my_net_paise
+              COALESCE(l.net, 0) AS my_net_paise
        FROM rooms r
        JOIN room_members me ON me.room_id = r.id AND me.user_id = $1
        LEFT JOIN (
-         SELECT room_id, SUM(amount_paise) AS total FROM expenses WHERE paid_by = $1 GROUP BY room_id
-       ) paid ON paid.room_id = r.id
-       LEFT JOIN (
-         SELECT e.room_id, SUM(es.share_paise) AS total
-         FROM expense_splits es JOIN expenses e ON e.id = es.expense_id
-         WHERE es.user_id = $1 GROUP BY e.room_id
-       ) owed ON owed.room_id = r.id
+         SELECT room_id, SUM(amount_paise) AS net FROM room_ledger WHERE user_id = $1 GROUP BY room_id
+       ) l ON l.room_id = r.id
        ORDER BY r.created_at DESC`,
       [userId]
     );
@@ -128,8 +123,9 @@ export async function getRoomById(userId: string, roomId: string) {
     const result = await client.query(
       // Totals come from here rather than from summing the (paginated) expense list.
       `SELECT r.id, r.name, r.type, ${INVITE_CODE_FOR_ADMIN}, me.role AS my_role, r.created_by, r.created_at,
-              (SELECT COUNT(*)::int FROM expenses e WHERE e.room_id = r.id) AS expense_count,
-              (SELECT COALESCE(SUM(e.amount_paise), 0)::float8 FROM expenses e WHERE e.room_id = r.id) AS total_spent_paise
+              (SELECT COUNT(*)::int FROM expenses e WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS expense_count,
+              (SELECT COALESCE(SUM(e.amount_paise), 0)::float8 FROM expenses e
+                WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS total_spent_paise
        FROM rooms r
        JOIN room_members me ON me.room_id = r.id AND me.user_id = $2
        WHERE r.id = $1`,
@@ -173,9 +169,7 @@ export async function removeMember(userId: string, roomId: string, memberId: str
     // still owes (or is owed) would make the room's balances stop adding up
     // to zero, so the settle-up plan would be wrong for everyone left.
     const { rows } = await client.query<{ net: string }>(
-      `SELECT (SELECT COALESCE(SUM(amount_paise), 0) FROM expenses WHERE room_id = $1 AND paid_by = $2)
-            - (SELECT COALESCE(SUM(es.share_paise), 0) FROM expense_splits es
-               JOIN expenses e ON e.id = es.expense_id WHERE e.room_id = $1 AND es.user_id = $2) AS net`,
+      "SELECT COALESCE(SUM(amount_paise), 0) AS net FROM room_ledger WHERE room_id = $1 AND user_id = $2",
       [roomId, memberId]
     );
     if (Number(rows[0].net) !== 0) {

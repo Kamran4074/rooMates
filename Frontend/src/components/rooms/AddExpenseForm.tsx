@@ -4,15 +4,13 @@ import { useState } from "react";
 import { apiAuthPost, errorMessage } from "@/lib/api";
 import type { Member } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
+import { todayInIndia } from "@/lib/format";
 import { TextField } from "@/components/ui/TextField";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Avatar } from "@/components/ui/Avatar";
-
-// Today in India, as YYYY-MM-DD (the API uses Indian calendar days).
-const todayInIndia = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; members: Member[]; onAdded: () => void }) {
   const myId = useAuthStore((s) => s.user?.id);

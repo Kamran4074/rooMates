@@ -38,6 +38,8 @@ export interface Expense {
   paid_by_name: string;
   /** The day it was spent (YYYY-MM-DD), chosen when adding it. */
   expense_date: string;
+  /** Who added it: they (or the room admin) may delete it. */
+  created_by: string;
   created_at: string;
 }
 
@@ -53,6 +55,21 @@ export interface Settlement {
   amountPaise: number;
   fromName: string;
   toName: string;
+}
+
+/** A recorded settle-up payment (GET /api/rooms/:id/settlements). Amount in paise. */
+export interface Payment {
+  id: string;
+  from_user_id: string;
+  from_name: string;
+  to_user_id: string;
+  to_name: string;
+  amount_paise: number;
+  /** YYYY-MM-DD */
+  settled_on: string;
+  note: string | null;
+  created_by: string;
+  created_at: string;
 }
 
 export interface RoomBalances {

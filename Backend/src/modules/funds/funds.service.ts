@@ -148,10 +148,12 @@ export async function getFund(userId: string, roomId: string, fundId: string) {
 
     const entries = await client.query(
       `SELECT e.id, e.kind, e.member_id, m.name AS member_name, e.amount_paise::float8 AS amount_paise,
-              e.note, e.confirmed, e.created_by, c.name AS created_by_name, e.created_at
+              e.note, e.confirmed, e.created_by, c.name AS created_by_name, e.created_at,
+              cb.name AS confirmed_by_name, e.confirmed_at
        FROM fund_entries e
        LEFT JOIN users m ON m.id = e.member_id
        LEFT JOIN users c ON c.id = e.created_by
+       LEFT JOIN users cb ON cb.id = e.confirmed_by
        WHERE e.fund_id = $1
        ORDER BY e.created_at DESC`,
       [fundId]
@@ -226,8 +228,10 @@ export async function addContribution(userId: string, roomId: string, fundId: st
 
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO fund_entries (id, fund_id, kind, member_id, amount_paise, note, confirmed, created_by)
-       VALUES ($1, $2, 'contribution', $3, $4, $5, $6, $7)`,
+      // A manager's own record is confirmed on the spot: they are the one who got the money.
+      `INSERT INTO fund_entries (id, fund_id, kind, member_id, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
+       VALUES ($1, $2, 'contribution', $3, $4, $5, $6, $7,
+               CASE WHEN $6 THEN $7::uuid END, CASE WHEN $6 THEN now() END)`,
       [id, fundId, input.memberId, toPaise(input.amount), input.note || null, manager, userId]
     );
     return { id, confirmed: manager };
@@ -241,8 +245,9 @@ export async function confirmEntry(userId: string, roomId: string, fundId: strin
     const fund = await loadFund(client, roomId, fundId, userId);
     requireManager(fund, userId);
     const { rows } = await client.query<{ kind: string }>(
-      "UPDATE fund_entries SET confirmed = true WHERE id = $1 AND fund_id = $2 AND NOT confirmed AND kind <> 'spend' RETURNING kind",
-      [entryId, fundId]
+      `UPDATE fund_entries SET confirmed = true, confirmed_by = $3, confirmed_at = now()
+       WHERE id = $1 AND fund_id = $2 AND NOT confirmed AND kind <> 'spend' RETURNING kind`,
+      [entryId, fundId, userId]
     );
     if (!rows[0]) throw new AppError("Nothing to confirm - it may already be confirmed", 409);
     if (rows[0].kind === "contribution") requireOpen(fund); // rolls the update back if closed
@@ -262,8 +267,8 @@ export async function addSpend(userId: string, roomId: string, fundId: string, i
 
     const id = crypto.randomUUID();
     await client.query(
-      `INSERT INTO fund_entries (id, fund_id, kind, amount_paise, note, confirmed, created_by)
-       VALUES ($1, $2, 'spend', $3, $4, true, $5)`,
+      `INSERT INTO fund_entries (id, fund_id, kind, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
+       VALUES ($1, $2, 'spend', $3, $4, true, $5, $5, now())`,
       [id, fundId, amountPaise, input.description, userId]
     );
     return { id };

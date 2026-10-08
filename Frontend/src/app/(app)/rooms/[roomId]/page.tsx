@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Plus, UserPlus, UserMinus, Receipt, Scale, Users as UsersIcon } from "lucide-react";
+import { ArrowLeft, Plus, UserPlus, UserMinus, Receipt, Trash2, Users as UsersIcon } from "lucide-react";
 import { apiAuthDelete, errorMessage } from "@/lib/api";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { rupees, formatDate } from "@/lib/format";
@@ -19,6 +19,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { InviteShare } from "@/components/rooms/InviteShare";
 import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
+import { SettleUpCard } from "@/components/rooms/SettleUpCard";
 import { RoomFundCard } from "@/components/funds/RoomFundCard";
 import { Pagination } from "@/components/ui/Pagination";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -30,6 +31,7 @@ export default function RoomPage() {
   const reloadRooms = useRoomsStore((s) => s.load);
   const [modal, setModal] = useState<"expense" | "invite" | null>(null);
   const [memberError, setMemberError] = useState<string | null>(null);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
   const confirm = useConfirm();
 
   // Four independent requests, fired in parallel.
@@ -46,7 +48,7 @@ export default function RoomPage() {
   const members = membersQuery.data ?? [];
   const expenses = expensesQuery.data?.items ?? [];
   const balances = balancesQuery.data?.balances ?? [];
-  const settlements = balancesQuery.data?.settlements ?? [];
+  const plan = balancesQuery.data?.settlements ?? [];
 
   async function handleRemove(memberId: string, name: string) {
     const ok = await confirm({
@@ -67,14 +69,38 @@ export default function RoomPage() {
     }
   }
 
+  // Anything that moves money: totals, balances, and the dashboard/sidebar
+  // balance for this room all need refreshing.
+  function onMoneyChanged() {
+    roomQuery.reload();
+    balancesQuery.reload();
+    reloadRooms();
+  }
+
   function onExpenseAdded() {
     setModal(null);
     // The new expense is the newest, i.e. on page 1.
     if (expensePage === 1) expensesQuery.reload();
     else setExpensePage(1);
-    roomQuery.reload(); // totals
-    balancesQuery.reload();
-    reloadRooms(); // keeps the dashboard/sidebar balance for this room in sync
+    onMoneyChanged();
+  }
+
+  async function handleDeleteExpense(exp: Expense) {
+    const ok = await confirm({
+      title: `Delete "${exp.description}"?`,
+      message: `${rupees(Number(exp.amount_paise))} comes out of everyone's balances. The room keeps a record of who deleted it.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    setExpenseError(null);
+    try {
+      await apiAuthDelete(`/api/rooms/${roomId}/expenses/${exp.id}`);
+      expensesQuery.reload();
+      onMoneyChanged();
+    } catch (err) {
+      setExpenseError(errorMessage(err, "Couldn't delete the expense"));
+    }
   }
 
   const error = roomQuery.error ?? membersQuery.error ?? expensesQuery.error ?? balancesQuery.error;
@@ -155,36 +181,34 @@ export default function RoomPage() {
                     <p className="text-xs text-foreground/50">Paid by {exp.paid_by === user?.id ? "you" : exp.paid_by_name}</p>
                   </div>
                   <p className="font-semibold">{rupees(Number(exp.amount_paise))}</p>
+                  {(isAdmin || exp.created_by === user?.id) && (
+                    <button
+                      onClick={() => handleDeleteExpense(exp)}
+                      className="p-1.5 rounded-full text-foreground/35 hover:text-danger hover:bg-danger/10 shrink-0"
+                      aria-label={`Delete ${exp.description}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           )}
+          <FormMessage error={expenseError} />
           {expensesQuery.data && <Pagination pagination={expensesQuery.data.pagination} onPage={setExpensePage} />}
         </Card>
 
         <div className="flex flex-col gap-6">
           <RoomFundCard roomId={roomId} fund={latestFund} />
 
-          <Card className="rounded-3xl p-6">
-            <h2 className="font-semibold flex items-center gap-2 mb-1">
-              <Scale className="h-4 w-4" /> Settle up
-            </h2>
-            <p className="text-xs text-foreground/50 mb-4">The fewest payments that square everyone up.</p>
-            {settlements.length === 0 ? (
-              <p className="text-sm text-foreground/55">Everyone&apos;s settled up.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {settlements.map((s) => (
-                  <li key={`${s.fromUserId}-${s.toUserId}`} className="flex items-center gap-2 text-sm rounded-2xl bg-foreground/3 px-3 py-2.5">
-                    <span className="font-medium truncate">{s.fromUserId === user?.id ? "You" : s.fromName}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-foreground/40 shrink-0" />
-                    <span className="font-medium truncate">{s.toUserId === user?.id ? "You" : s.toName}</span>
-                    <span className="ml-auto font-semibold text-primary">{rupees(s.amountPaise)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <SettleUpCard
+            roomId={roomId}
+            members={members}
+            myId={user?.id}
+            isAdmin={isAdmin}
+            plan={plan}
+            onChanged={onMoneyChanged}
+          />
 
           <Card className="rounded-3xl p-6">
             <h2 className="font-semibold flex items-center gap-2 mb-4">
