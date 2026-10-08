@@ -8,7 +8,7 @@ import { errorMessage } from "@/lib/api";
 import { formatDate, rupees, timeAgo } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
 import type { AdminUserDetail } from "@/lib/types";
-import { deleteUser, suspendUser, unsuspendUser } from "@/services/adminApi";
+import { unsuspendUser } from "@/services/adminApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -17,7 +17,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { LoadingState } from "@/components/ui/Skeleton";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
-import { ReasonModal } from "@/components/admin/ReasonModal";
+import { UserAction, UserActionModals } from "@/components/admin/UserActionModals";
 import { UserStatusBadges, signInMethod } from "@/components/admin/UserStatusBadges";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -38,7 +38,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export default function AdminUserPage() {
   const { id } = useParams<{ id: string }>();
   const { data: u, error, reload } = useApiQuery<AdminUserDetail>(`/api/admin/users/${id}`);
-  const [modal, setModal] = useState<"suspend" | "delete" | null>(null);
+  const [action, setAction] = useState<UserAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   if (error) return <p className="text-danger">{error}</p>;
@@ -77,11 +77,11 @@ export default function AdminUserPage() {
                   <ShieldCheck className="h-4 w-4" /> Restore
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => setModal("suspend")}>
+                <Button size="sm" variant="outline" onClick={() => setAction({ type: "suspend", user: u })}>
                   <ShieldOff className="h-4 w-4" /> Suspend
                 </Button>
               )}
-              <Button size="sm" variant="danger" onClick={() => setModal("delete")}>
+              <Button size="sm" variant="danger" onClick={() => setAction({ type: "delete", user: u })}>
                 <Trash2 className="h-4 w-4" /> Delete
               </Button>
             </>
@@ -182,39 +182,7 @@ export default function AdminUserPage() {
         </div>
       </div>
 
-      <ReasonModal
-        open={modal === "suspend"}
-        title={`Suspend ${u.name}`}
-        label="Reason (kept in the audit log)"
-        confirmLabel="Suspend and sign them out"
-        required={false}
-        description="They're signed out everywhere and can't sign in until you restore the account. Nothing is deleted."
-        onClose={() => setModal(null)}
-        onConfirm={async (reason) => {
-          await suspendUser(u.id, reason || undefined);
-          reload();
-        }}
-      />
-      <ReasonModal
-        open={modal === "delete"}
-        title={`Delete ${u.name}?`}
-        label="Reason (kept in the audit log)"
-        confirmLabel="Delete account"
-        danger
-        description={
-          <ul className="list-disc pl-5 flex flex-col gap-1">
-            <li>Their name, email, phone and photo are erased and they can&apos;t sign in. This can&apos;t be undone.</li>
-            <li>Groups only they were in are deleted. Groups they ran get the longest-standing member as admin.</li>
-            <li>Expenses and payments stay in other people&apos;s groups as &quot;Deleted user&quot;.</li>
-            <li>Not allowed while they still owe or are owed money in a group.</li>
-          </ul>
-        }
-        onClose={() => setModal(null)}
-        onConfirm={async (reason) => {
-          await deleteUser(u.id, reason);
-          reload();
-        }}
-      />
+      <UserActionModals action={action} onClose={() => setAction(null)} onDone={reload} />
     </>
   );
 }

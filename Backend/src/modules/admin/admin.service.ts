@@ -56,7 +56,12 @@ export async function getStats() {
 // ---------------- Users ----------------
 
 export type UserStatusFilter = "active" | "inactive" | "suspended" | "deleted";
-export type UserSort = "newest" | "oldest" | "last_active";
+export type UserSort = "newest" | "oldest" | "last_active" | "least_active";
+export interface UserFilters {
+  search?: string;
+  status?: UserStatusFilter;
+  sort?: UserSort;
+}
 
 const USER_STATUS_SQL: Record<UserStatusFilter | "all", string> = {
   all: "u.deleted_at IS NULL",
@@ -70,29 +75,76 @@ const USER_SORT_SQL: Record<UserSort, string> = {
   newest: "u.created_at DESC",
   oldest: "u.created_at ASC",
   last_active: "u.last_active_at DESC NULLS LAST",
+  least_active: "u.last_active_at ASC NULLS FIRST",
 };
 
-export async function listUsers(
-  filters: { search?: string; status?: UserStatusFilter; sort?: UserSort },
-  page: PageParams
-) {
-  const { limit, offset } = toLimitOffset(page);
-  // Status/sort come from a closed enum (Zod) mapped to fixed SQL - never user text.
-  const { rows } = await adminPool.query(
+// One query for the list and the CSV export, so both always agree.
+// Status/sort come from a closed enum (Zod) mapped to fixed SQL - never user text.
+function usersQuery(filters: UserFilters, limit: number, offset: number) {
+  return adminPool.query(
     `SELECT u.id, u.name, u.email, u.phone, u.picture, u.role, u.suspended_at, u.deleted_at,
-            u.created_at, u.last_active_at,
+            u.created_at, u.last_active_at, u.onboarding_completed, o.plan,
             (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
             (SELECT COUNT(*)::int FROM listings l WHERE l.owner_id = u.id) AS listing_count,
             (SELECT COUNT(*)::int FROM room_members rm WHERE rm.user_id = u.id) AS room_count,
             COUNT(*) OVER() AS total_count
-     FROM users u
+     FROM users u JOIN organizations o ON o.id = u.organization_id
      WHERE ${USER_STATUS_SQL[filters.status ?? "all"]}
        AND ($1::text IS NULL OR u.name ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%')
-     ORDER BY ${USER_SORT_SQL[filters.sort ?? "newest"]}
+     ORDER BY ${USER_SORT_SQL[filters.sort ?? "newest"]}, u.id
      LIMIT $2 OFFSET $3`,
     [filters.search || null, limit, offset]
   );
+}
+
+export async function listUsers(filters: UserFilters, page: PageParams) {
+  const { limit, offset } = toLimitOffset(page);
+  const { rows } = await usersQuery(filters, limit, offset);
   return paginate(rows, page);
+}
+
+export const MAX_EXPORT_ROWS = 10_000;
+
+// A spreadsheet treats a cell starting with = + - @ (or a tab/CR) as a
+// formula; a user named "=HYPERLINK(...)" could run something on the admin's
+// machine. Prefixing ' makes it plain text ("CSV injection"). A plain number
+// like a phone "+919876543210" can't be a formula, so it's left as is.
+function csvCell(value: unknown): string {
+  let s = value === null || value === undefined ? "" : String(value);
+  if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+const iso = (d: Date | null) => (d ? d.toISOString() : "");
+
+// Same filters as the list, as CSV. Exporting personal data is itself
+// audit-logged: who exported, how many rows, with which filters.
+export async function exportUsersCsv(adminId: string, filters: UserFilters) {
+  const { rows } = await usersQuery(filters, MAX_EXPORT_ROWS, 0);
+  const header = ["Name", "Email", "Mobile", "Plan", "Profile done", "Groups", "Listings", "Signs in with", "Status", "Joined", "Last active"];
+  const lines = rows.map((u) =>
+    [
+      u.name,
+      u.deleted_at ? "" : u.email,
+      u.phone,
+      u.plan,
+      u.onboarding_completed ? "Yes" : "No",
+      u.room_count,
+      u.listing_count,
+      [u.has_google && "Google", u.has_password && "Password"].filter(Boolean).join(" + "),
+      u.deleted_at ? "Deleted" : u.suspended_at ? "Suspended" : "Active",
+      iso(u.created_at),
+      iso(u.last_active_at),
+    ]
+      .map(csvCell)
+      .join(",")
+  );
+
+  await withAdminTransaction((client) =>
+    audit(client, adminId, "EXPORTED_USERS", "user", adminId, { rows: rows.length, ...filters })
+  );
+  // BOM so Excel opens UTF-8 names (Hindi, accents) correctly.
+  return "﻿" + [header.join(","), ...lines].join("\r\n") + "\r\n";
 }
 
 // Everything support needs on one screen: the account, its groups (with

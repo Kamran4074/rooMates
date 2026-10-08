@@ -133,3 +133,24 @@ export const apiAuthPatch = <T>(path: string, body: unknown) => authSend<T>("PAT
 export async function apiAuthDelete(path: string): Promise<void> {
   await handleResponse(await authFetch(path, { method: "DELETE" }));
 }
+
+// Authenticated file download (e.g. the admin CSV export). A plain <a href>
+// can't send the Authorization header, so: fetch -> blob -> temporary link.
+export async function apiAuthDownload(path: string, fallbackName: string): Promise<void> {
+  const res = await authFetch(path, { method: "GET" });
+  if (!res.ok) await readBody(res); // throws ApiError with the server's message
+  const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// For endpoints whose `data` is an object (not a list) but that still send
+// `pagination`, e.g. the onboarding tracker: { counts, items } + pagination.
+export async function apiAuthGetPaged<T>(path: string): Promise<{ data: T; pagination: Pagination }> {
+  const body = await readBody(await authFetch(path, { method: "GET" }));
+  return { data: body.data, pagination: body.pagination };
+}

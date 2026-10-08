@@ -11,7 +11,10 @@ router.use(authenticate, authorize("super_admin"));
 
 router.get("/stats", c.handleStats);
 
+router.get("/onboarding", c.handleOnboarding);
+
 router.get("/users", c.handleUsers);
+router.get("/users/export", c.handleExportUsers); // before /users/:id, or "export" is read as an id
 router.get("/users/:id", c.handleUser);
 router.post("/users/:id/delete", c.handleDeleteUser);
 router.post("/users/:id/suspend", c.handleSuspend);

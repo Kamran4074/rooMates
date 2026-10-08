@@ -1,12 +1,34 @@
 import { z } from "zod";
 import { paginationQuery } from "../../utils/pagination";
 
-export const usersQuery = paginationQuery.extend({
+const userFilters = {
   search: z.string().trim().max(100).optional(),
   // active / inactive = used / not used in the last 30 days. Default: everyone except deleted.
   status: z.enum(["active", "inactive", "suspended", "deleted"]).optional(),
-  sort: z.enum(["newest", "oldest", "last_active"]).optional(),
+  sort: z.enum(["newest", "oldest", "last_active", "least_active"]).optional(),
+};
+
+export const usersQuery = paginationQuery.extend(userFilters);
+
+export const onboardingQuery = paginationQuery.extend({
+  search: z.string().trim().max(100).optional(),
+  filter: z
+    .enum([
+      "all",
+      "stuck",
+      "activated",
+      "dormant",
+      "waiting_email_verified",
+      "waiting_profile_completed",
+      "waiting_joined_group",
+      "waiting_first_expense",
+    ])
+    .optional(),
+  sort: z.enum(["newest", "oldest", "waiting_longest", "waiting_shortest"]).optional(),
 });
+
+// The CSV export takes the same filters, without paging.
+export const usersExportQuery = z.object(userFilters);
 
 export const listingsQuery = paginationQuery.extend({
   status: z.enum(["draft", "pending", "published", "rejected", "rented", "removed"]).optional(),

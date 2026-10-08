@@ -267,6 +267,9 @@ export interface AdminUser {
   last_active_at: string | null;
   has_google: boolean;
   has_password: boolean;
+  /** Finished onboarding (name + phone). */
+  onboarding_completed: boolean;
+  plan: "free" | "paid";
   listing_count: number;
   room_count: number;
 }
@@ -274,11 +277,46 @@ export interface AdminUser {
 /** GET /api/admin/users/:id */
 export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room_count"> {
   email_verified: boolean;
-  onboarding_completed: boolean;
-  plan: "free" | "paid";
   max_rooms: number;
   active_sessions: number;
   rooms: { id: string; name: string; type: RoomType; role: "admin" | "member"; joined_at: string; member_count: number; net_paise: number }[];
   listings: { id: string; title: string; status: ListingStatus; city: string; created_at: string }[];
   history: { id: string; action: string; details: Record<string, unknown> | null; created_at: string; admin_name: string | null }[];
+}
+
+export type OnboardingStage = "email_verified" | "profile_completed" | "joined_group" | "first_expense" | "activated";
+
+/** A row in the onboarding tracker (GET /api/admin/onboarding). */
+export interface OnboardingUser {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  picture: string | null;
+  created_at: string;
+  last_active_at: string | null;
+  email_verified_at: string | null;
+  onboarding_completed_at: string | null;
+  joined_group_at: string | null;
+  first_expense_at: string | null;
+  /** The first step they haven't done yet. */
+  stage: OnboardingStage;
+  /** Days since their last completed step; null once activated. */
+  days_waiting: number | null;
+  dormant: boolean;
+}
+
+export interface OnboardingCounts {
+  signed_up: number;
+  email_verified: number;
+  profile_completed: number;
+  joined_group: number;
+  first_expense: number;
+  stuck: number;
+  activated: number;
+  dormant: number;
+  waiting_email_verified: number;
+  waiting_profile_completed: number;
+  waiting_joined_group: number;
+  waiting_first_expense: number;
 }

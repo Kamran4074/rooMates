@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { adminPool } from "../src/config/db";
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, apiRaw, cleanup, createUser, startServer, TestUser } from "./helpers";
 
 // Super admin user management: last active, filters, the user detail view and
 // deleting (anonymising) an account.
@@ -56,6 +56,35 @@ describe("users list and detail", () => {
   it("is super admin only", async () => {
     const normal = await createUser();
     expect((await api(normal, "GET", `/api/admin/users/${normal.id}`)).status).toBe(403);
+  });
+});
+
+describe("CSV export", () => {
+  it("exports the filtered users, neutralises spreadsheet formulas, and is audit-logged", async () => {
+    const sneaky = await createUser();
+    await adminPool.query(`UPDATE users SET name = '=HYPERLINK("http://evil")' WHERE id = $1`, [sneaky.id]);
+
+    const res = await apiRaw(admin, `/api/admin/users/export?search=${sneaky.email}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename="roomates-users-\d{4}-\d{2}-\d{2}\.csv"/);
+
+    const [header, row] = res.text.replace(/^﻿/, "").trim().split("\r\n");
+    expect(header).toBe("Name,Email,Mobile,Plan,Profile done,Groups,Listings,Signs in with,Status,Joined,Last active");
+    // Leading ' stops Excel running it; quotes doubled inside a quoted cell.
+    // The phone (+91..., a plain number) is not touched.
+    expect(row.startsWith(`"'=HYPERLINK(""http://evil"")",${sneaky.email},+91`)).toBe(true);
+
+    const { rows } = await adminPool.query(
+      "SELECT details FROM audit_logs WHERE admin_id = $1 AND action = 'EXPORTED_USERS' ORDER BY created_at DESC LIMIT 1",
+      [admin.id]
+    );
+    expect(rows[0].details).toEqual(expect.objectContaining({ rows: 1, search: sneaky.email }));
+  });
+
+  it("is super admin only", async () => {
+    const normal = await createUser();
+    expect((await apiRaw(normal, "/api/admin/users/export")).status).toBe(403);
   });
 });
 

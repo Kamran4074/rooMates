@@ -67,7 +67,13 @@ export async function api(user: TestUser | null, method: string, path: string, b
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
 
-export const validListing = (overrides: Record<string, unknown> = {}) => ({
+// For non-JSON responses (CSV downloads).
+export async function apiRaw(user: TestUser | null, path: string) {
+  const res = await fetch(baseUrl + path, { headers: user ? { Authorization: `Bearer ${user.token}` } : {} });
+  return { status: res.status, headers: res.headers, text: await res.text() };
+}
+
+export const validListing =(overrides: Record<string, unknown> = {}) => ({
   title: "Sunny private room near metro",
   description: "Bright room in a 2BHK, 5 minutes from the metro station, friendly flatmates.",
   rent: 8500,

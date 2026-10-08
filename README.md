@@ -78,6 +78,8 @@ Business rules worth knowing: the free plan allows 2 created rooms per account; 
 - Reports: dismiss, resolve, or remove the listing
 - Users: search, filter (active / inactive in the last 30 days, suspended, deleted), sort by signup or last active; each row shows join date, last active and group count
 - User page: profile, sign-in method, signed-in devices, every group with its size and the user's balance, listings, admin history
+- **Onboarding tracker:** funnel signed up → email verified → profile done → in a group → first expense (= activated), with each person's step dates, current stage, days waiting, and tabs for stuck (3+ days), each waiting stage, activated and dormant (30+ days). Milestone times are stamped by a DB trigger, whichever path set them
+- **Export CSV** of the filtered users list (audit-logged; cells that would run as spreadsheet formulas are neutralised)
 - Suspend / restore accounts (ends their sessions)
 - Delete an account = anonymise it: personal data wiped, can't sign in, history kept for the other members. Refused while they still have money to settle; groups only they were in are deleted, groups they ran get a new admin
 - Read-only view of any expense room, for support
@@ -259,7 +261,7 @@ Main groups:
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
 | Listings | `GET /api/listings?city=&minRent=&maxRent=&roomType=`, `GET /api/listings/nearby?lat=&lng=&radiusKm=`, `GET /api/listings/mine`, `POST/PATCH/DELETE /api/listings/:id`, `POST /api/listings/:id/status`, photos, reports |
 | Requests | `POST /api/requests`, `GET /api/requests/sent`, `GET /api/requests/received`, `PATCH /api/requests/:id` |
-| Admin | `GET /api/admin/stats`, `/users`, `/users/:id`, `/listings`, `/reports`, `/rooms`, `/audit-logs`; approve/reject/remove, suspend, delete user, resolve |
+| Admin | `GET /api/admin/stats`, `/onboarding`, `/users`, `/users/export` (CSV), `/users/:id`, `/listings`, `/reports`, `/rooms`, `/audit-logs`; approve/reject/remove, suspend, delete user, resolve |
 
 ## Local setup
 

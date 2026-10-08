@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Flag, LayoutDashboard, Megaphone, ScrollText, Settings, Users } from "lucide-react";
+import { Building2, Flag, LayoutDashboard, Megaphone, Route, ScrollText, Settings, Users } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { NavLink } from "./NavLink";
 
 const ITEMS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/onboarding", label: "Onboarding", icon: Route },
   { href: "/admin/rooms", label: "Groups", icon: Building2 },
   { href: "/admin/listings", label: "Listings", icon: Megaphone },
   { href: "/admin/reports", label: "Reports", icon: Flag },

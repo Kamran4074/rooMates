@@ -9,9 +9,12 @@ import {
   resolveReportSchema,
   roomsQuery,
   usersQuery,
+  usersExportQuery,
+  onboardingQuery,
 } from "./admin.schema";
 import { paginationQuery } from "../../utils/pagination";
 import * as admin from "./admin.service";
+import { getOnboarding } from "./onboarding.service";
 
 const id = (req: Request) => idParam.parse(req.params.id);
 
@@ -23,6 +26,25 @@ export async function handleUsers(req: Request, res: Response) {
   const { search, status, sort, page, limit } = usersQuery.parse(req.query);
   const { data, pagination } = await admin.listUsers({ search, status, sort }, { page, limit });
   sendSuccess(res, data, { pagination });
+}
+
+export async function handleOnboarding(req: Request, res: Response) {
+  const { search, filter, sort, page, limit } = onboardingQuery.parse(req.query);
+  const { counts, items, pagination } = await getOnboarding({ search, filter, sort }, { page, limit });
+  sendSuccess(res, { counts, items }, { pagination });
+}
+
+export async function handleExportUsers(req: Request, res: Response) {
+  const csv = await admin.exportUsersCsv(req.auth!.sub, usersExportQuery.parse(req.query));
+  const date = new Date().toISOString().slice(0, 10);
+  res
+    .status(200)
+    .set({
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="roomates-users-${date}.csv"`,
+      "Cache-Control": "no-store",
+    })
+    .send(csv);
 }
 
 export async function handleUser(req: Request, res: Response) {

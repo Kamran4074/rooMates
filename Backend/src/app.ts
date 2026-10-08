@@ -34,7 +34,9 @@ app.use((req, res, next) =>
 // maxAge: the browser caches the CORS preflight (OPTIONS) for a day instead of
 // sending one before nearly every API call - every call carries an
 // Authorization header, which forces a preflight.
-app.use(cors({ origin: env.CORS_ORIGIN, maxAge: 86_400 }));
+// exposedHeaders: lets the frontend read the CSV export's file name (cross-origin
+// responses only expose a few "safe" headers by default).
+app.use(cors({ origin: env.CORS_ORIGIN, maxAge: 86_400, exposedHeaders: ["Content-Disposition"] }));
 // Bodies here are small forms; a cap stops someone posting a huge payload.
 app.use(express.json({ limit: "100kb" }));
 app.use(requestLogger);

@@ -28,7 +28,7 @@ import {
   FURNISHING,
 } from "../modules/listings/listings.schema";
 import { createRequestSchema, receivedRequestsQuery, respondToRequestSchema, sentRequestsQuery } from "../modules/requests/requests.schema";
-import { listingsQuery, reasonSchema, reportsQuery, resolveReportSchema, roomsQuery, usersQuery } from "../modules/admin/admin.schema";
+import { listingsQuery, reasonSchema, reportsQuery, resolveReportSchema, roomsQuery, usersExportQuery, usersQuery, onboardingQuery } from "../modules/admin/admin.schema";
 
 const registry = new OpenAPIRegistry();
 
@@ -825,6 +825,14 @@ route("get", "/api/admin/stats", "Admin", "Dashboard counts: users (new / active
 route("get", "/api/admin/users", "Admin", "Users with search, status (active/inactive = used in the last 30 days or not, suspended, deleted) and sort", {
   query: usersQuery,
   ok: page(z.object({ id: z.string(), name: z.string(), email: z.string(), role: z.string(), suspended_at: z.string().nullable(), deleted_at: z.string().nullable(), created_at: z.string(), last_active_at: z.string().nullable(), room_count: z.number(), listing_count: z.number(), has_google: z.boolean(), has_password: z.boolean() })),
+  errors: adminOnly,
+});
+route("get", "/api/admin/onboarding", "Admin", "Onboarding funnel: signed up -> email verified -> profile completed -> in a group -> first expense. Funnel/tab counts plus a filtered, paginated list with each step's date, current stage and days waiting", {
+  query: onboardingQuery,
+  errors: adminOnly,
+});
+route("get", "/api/admin/users/export", "Admin", "Download the filtered users list as CSV (max 10,000 rows; the export is audit-logged)", {
+  query: usersExportQuery,
   errors: adminOnly,
 });
 route("get", "/api/admin/users/{id}", "Admin", "One account for support: profile, groups (size + their balance), listings, active sessions, admin history", {
