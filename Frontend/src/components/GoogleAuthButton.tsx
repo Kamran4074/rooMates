@@ -5,24 +5,23 @@ import { useGoogleLogin } from "@react-oauth/google";
 import { apiPost, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
+import { FormMessage } from "@/components/ui/FormMessage";
 import { TermsNotice } from "@/components/TermsCheckbox";
 
 const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
-// "OR continue with Google" block. Google signs up and signs in through the
-// same endpoint (find-or-create), so a brand-new user accepts the terms by
-// clicking it - the notice underneath says so, and the request records it.
-export function GoogleAuthButton({ onError }: { onError: (message: string | null) => void }) {
+// "Continue with Google" block that sits above the email form on both sign-in
+// and sign-up (the one-click option first). Google signs up and signs in
+// through the same endpoint (find-or-create), so a brand-new user accepts the
+// terms by clicking it - the notice underneath says so, and the request
+// records it. Its errors show right under the button, not below the form.
+export function GoogleAuthButton() {
+  const [error, setError] = useState<string | null>(null);
+
   return (
     <>
-      <div className="flex items-center gap-3 my-6">
-        <div className="h-px flex-1 bg-card-border" />
-        <span className="text-xs text-foreground/40">OR</span>
-        <div className="h-px flex-1 bg-card-border" />
-      </div>
-
       {googleEnabled ? (
-        <GoogleButton onError={onError} />
+        <GoogleButton onError={setError} />
       ) : (
         <>
           <Button type="button" variant="outline" disabled className="w-full">
@@ -33,7 +32,18 @@ export function GoogleAuthButton({ onError }: { onError: (message: string | null
         </>
       )}
 
+      {error && (
+        <div className="mt-3 text-center">
+          <FormMessage error={error} />
+        </div>
+      )}
       <TermsNotice prefix="By continuing with Google you agree to the" />
+
+      <div className="flex items-center gap-3 my-6">
+        <div className="h-px flex-1 bg-card-border" />
+        <span className="text-xs text-foreground/40">or continue with email</span>
+        <div className="h-px flex-1 bg-card-border" />
+      </div>
     </>
   );
 }

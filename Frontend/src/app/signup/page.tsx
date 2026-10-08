@@ -55,6 +55,8 @@ export default function SignUpPage() {
       <h1 className="text-3xl font-bold mb-2">Sign Up</h1>
       <p className="text-foreground/50 mb-8">Enter your details below to create your account!</p>
 
+      <GoogleAuthButton />
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
           <TextField
@@ -108,7 +110,7 @@ export default function SignUpPage() {
         <TermsCheckbox
           checked={agreed}
           onChange={setAgreed}
-          prefix="By creating an account means you agree to the"
+          prefix="By creating an account, you agree to the"
         />
 
         <FormMessage error={error} />
@@ -117,8 +119,6 @@ export default function SignUpPage() {
           {loading ? "Creating account..." : "Sign Up"}
         </Button>
       </form>
-
-      <GoogleAuthButton onError={setError} />
 
       <p className="text-sm text-foreground/60 mt-8">
         Already have an account?{" "}

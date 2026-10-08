@@ -10,6 +10,7 @@ import { TextField } from "@/components/ui/TextField";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
+import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 
 export default function SignInPage() {
   useRedirectIfAuthenticated();
@@ -41,7 +42,9 @@ export default function SignInPage() {
   return (
     <AuthShell>
       <h1 className="text-3xl font-bold mb-2">Sign In</h1>
-      <p className="text-foreground/50 mb-8">Enter your email and password to sign in!</p>
+      <p className="text-foreground/50 mb-8">Welcome back! Sign in to continue.</p>
+
+      <GoogleAuthButton />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <TextField
@@ -74,21 +77,12 @@ export default function SignInPage() {
         </Button>
       </form>
 
-      <div className="text-sm text-foreground/60 mt-6 flex flex-col gap-2">
-        <p>
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-primary font-medium">
-            Sign Up
-          </Link>
-        </p>
-        {/* Google accounts have no password; the sign-up page's Google button signs existing users in too. */}
-        <p>
-          Signed up with Google?{" "}
-          <Link href="/signup" className="text-primary font-medium">
-            Continue with Google
-          </Link>
-        </p>
-      </div>
+      <p className="text-sm text-foreground/60 mt-8">
+        Don&apos;t have an account?{" "}
+        <Link href="/signup" className="text-primary font-medium">
+          Sign Up
+        </Link>
+      </p>
     </AuthShell>
   );
 }
