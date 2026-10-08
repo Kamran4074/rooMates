@@ -91,15 +91,85 @@ Business rules worth knowing: the free plan allows 2 created rooms per account; 
 
 ## Tech stack
 
-| Layer | Tools |
+Everything the project uses, and what for.
+
+### Frontend
+
+| Tool | Version | Used for |
+|---|---|---|
+| Next.js (App Router, Turbopack) | 16 | Pages, routing, `proxy.ts` (dev-only LAN redirect), metadata/SEO, `next typegen` route types |
+| React | 19 | UI |
+| TypeScript | 5 | Types end to end |
+| Tailwind CSS (`@tailwindcss/postcss`) | 4 | Styling, dark theme, responsive layout |
+| Zustand | 5 | Shared client state: auth session, rooms, approvals, unread notifications, live-update counters |
+| `@react-oauth/google` | 0.13 | "Continue with Google" popup (access-token flow) |
+| lucide-react | 1 | Icons |
+| ESLint + `eslint-config-next` | 9 | Linting (incl. React hooks / React Compiler rules) |
+
+### Backend
+
+| Tool | Version | Used for |
+|---|---|---|
+| Node.js | 24 | Runtime (same version locally, in CI and on Render) |
+| Express | 5 | HTTP API (async errors forwarded to the error middleware) |
+| TypeScript | 7 | Types; `tsc` builds `dist/` |
+| `pg` | 8 | PostgreSQL driver: raw parameterised SQL, two pools (`app_user` with RLS, owner for admin/migrations), a dedicated `LISTEN` connection |
+| node-pg-migrate | 9 | Versioned SQL migrations, run automatically at startup under an advisory lock |
+| Zod | 4 | Validation of every body, query and param; also the source of the OpenAPI docs |
+| `@asteasolutions/zod-to-openapi` + swagger-ui-express | 9 / 5 | OpenAPI 3.1 spec generated from the Zod schemas, served at `/api-docs` |
+| jsonwebtoken | 9 | Access tokens (HS256, pinned) |
+| bcryptjs | 3 | Password hashing |
+| google-auth-library | 11 | Verifying Google access tokens (audience + verified email checks) |
+| Helmet | 8 | Security headers (CSP, HSTS, nosniff, frame-ancestors) |
+| cors | 2 | Origin allow-list; exposes `Content-Disposition` for CSV downloads |
+| express-rate-limit / express-slow-down | 8 / 3 | Per-IP and per-account limits, login slow-down |
+| Winston + Morgan | 3 / 1 | Structured logs and request logs |
+| dotenv | 18 | Local `.env` loading (validated by Zod at startup) |
+| tsx | 4 | Running TypeScript in development (`npm run dev`) |
+
+### Database (PostgreSQL on Neon)
+
+| Feature | Used for |
 |---|---|
-| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Zustand, lucide-react |
-| Backend | Node.js, Express 5, TypeScript, Zod, Winston + Morgan |
-| Database | PostgreSQL (Neon), Row-Level Security, node-pg-migrate (raw SQL via `pg`, no ORM) |
-| Auth | JWT + rotated refresh tokens, bcrypt, Google OAuth (token verified with Google), email OTP |
-| Services | Brevo (email), Cloudinary (listing photos, signed direct upload) |
-| Security | Helmet, express-rate-limit, express-slow-down, CORS allow-list |
-| Docs & tests | OpenAPI generated from the Zod schemas + Swagger UI, Jest (unit + API integration) |
+| PostgreSQL 18 (Neon, AWS Singapore; CI runs 17) | The only data store |
+| Row-Level Security policies + `SECURITY DEFINER` helper functions | Tenant isolation: a member can only ever read their own rooms' data, enforced by the database |
+| Two roles (`app_user` least-privilege, owner) | RLS for every request; the owner role only for migrations and the super-admin module |
+| Views (`room_ledger`, `security_invoker`) | One source of truth for every balance (expenses, splits, payments, soft deletes) |
+| Triggers | `updated_at` stamping, onboarding milestone timestamps, section membership sync, the read-only activity log |
+| `LISTEN` / `NOTIFY` | Live updates: the activity-log trigger notifies, the API pushes to browsers |
+| Partial and expression indexes, CHECK / UNIQUE constraints | Hot-path queries; rules like "one admin per room", money > 0, text length limits |
+| `pgcrypto` (`gen_random_uuid()`) | Primary keys |
+
+### Third-party services
+
+| Service | Used for |
+|---|---|
+| **Neon** | Managed serverless PostgreSQL (non-pooled connection, Singapore region) |
+| **Render** | Backend hosting (Blueprint in [render.yaml](render.yaml), Singapore, auto-deploy after CI passes) |
+| **Vercel** | Frontend hosting ([roomatess.vercel.app](https://roomatess.vercel.app)) |
+| **Brevo** | Transactional email over its HTTPS API: signup verification codes, password-reset codes, contact form |
+| **Cloudinary** | Listing photos: signed direct upload from the browser (SHA-1 signature, no SDK), server-checked `public_id` |
+| **Google Identity (OAuth 2.0)** | Sign in / sign up with Google |
+| **GitHub + GitHub Actions** | Source control; CI on every push and pull request |
+
+### Testing & tooling
+
+| Tool | Used for |
+|---|---|
+| Jest 30 + `@swc/jest` | 33 unit tests (settlement algorithm, splits, fund maths, geo, schemas) and 74 API integration tests against a real PostgreSQL |
+| GitHub Actions | Typecheck, lint, unit + API tests on a fresh Postgres service container (all migrations from zero), production builds |
+| Docker (optional) | A throwaway local database - `docker run --rm -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=neondb -p 55432:5432 postgres:17-alpine` - to run migrations and API tests without touching the real one |
+| Swagger UI | Trying the API by hand at `/api-docs` |
+
+### Patterns worth knowing
+
+- **Modular monolith:** route → controller (Zod) → service → repository (only for shared SQL) → PostgreSQL
+- **One response envelope:** `{ success, message?, data, pagination? }`
+- **Money as integer paise**, never floats
+- **Soft deletes** for money records (`deleted_at`, `deleted_by`); accounts are anonymised, not deleted
+- **Two-sided fund payments:** a payment counts only when the payer and the collector both agree
+- **Audit trails written by the database** (activity log via triggers; admin actions in the same transaction)
+- **Live updates over Server-Sent Events** (one-way push is all that's needed, so no WebSocket server)
 
 ## Architecture
 
@@ -198,14 +268,16 @@ Frontend/src/
 
 | Table | What it holds |
 |---|---|
-| `users`, `organizations` | accounts (role, suspension, `last_active_at`, `deleted_at` for anonymised accounts), billing tenant / room quota |
+| `users`, `organizations` | accounts (role, suspension, `last_active_at`, `deleted_at` for anonymised accounts, `email_verified_at` / `onboarding_completed_at` stamped by a trigger, `notifications_seen_at`), billing tenant / room quota |
 | `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
 | `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it; soft delete via `deleted_at`/`deleted_by`) and each member's share (integer paise) |
 | `settlements` | recorded settle-up payments: from, to, amount, `settled_on` (soft delete like expenses) |
 | `room_ledger` (view) | every money movement in a room as +/- per person; **all balances in the app read this one view** (room balances, dashboard, "is this member settled?"). `security_invoker`, so RLS still applies |
-| `room_funds`, `fund_participants`, `fund_entries` | kitty per room: collector and status; who's in it; one ledger of payments, spends and the closing refunds/collections (each marked confirmed once money changed hands, with `confirmed_by`/`confirmed_at`) |
+| `room_funds`, `fund_participants`, `fund_entries` | kitty per room: collector and status; who's in it; one ledger of payments, spends and the closing refunds/collections (each confirmed once both sides agree, with `confirmed_by`/`confirmed_at`, or disputed with `disputed_by`/`dispute_note`) |
 | `listings`, `listing_images` | room listings (status lifecycle, optional lat/lng) and photos |
 | `listing_requests`, `listing_reports` | interest requests (one per user per listing); user reports |
+| `expense_categories`, `expense_category_members` | bill sections of a room (Rent, Groceries...) and who shares each; a trigger adds new room members to every section and removes people who leave |
+| `activity_log` | every money event in a room (expense added/deleted, payments, fund payments approved/disputed, joins/leaves), written only by triggers; `app_user` can read it but has no INSERT/UPDATE/DELETE. Also announces each row with `pg_notify` for live updates |
 | `refresh_tokens`, `otp_codes` | SHA-256 hashes only |
 | `audit_logs` | admin actions, written in the same transaction as the action |
 
@@ -242,6 +314,10 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 - Two DB roles: the API uses least-privilege `app_user` (RLS applies); the owner role is used only by migrations and the admin module
 - Secrets only in `.env` (git-ignored); env validated at startup
 - Contact details shared only after a request is accepted; owner IDs aren't exposed in public listing data
+- The activity log is written only by database triggers; the app's role can't insert, edit or delete it
+- Disputed fund payments can't be deleted (RLS), so the record of a disagreement stays
+- CSV exports neutralise spreadsheet formulas and are themselves audit-logged
+- Live-update streams: authenticated, at most 5 per user, closed on shutdown; events carry only a room id and event type, never data
 
 ## API
 
@@ -348,7 +424,7 @@ npm test            # unit tests: settlement algorithm, splits, fund maths, geo,
 npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
 ```
 
-The API tests cover registration/verification/login, refresh-token rotation, room isolation, listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension and the admin room view.
+**33 unit tests and 74 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), the activity log (including that the app can't write to it) and the live event stream, listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 
@@ -380,7 +456,8 @@ On a VPS instead: run the backend with PM2 (`pm2 start dist/index.js --name room
 - Refresh token in an `httpOnly` cookie instead of `localStorage`
 - Redis-backed rate limits once there's more than one server instance
 - Listing expiry (e.g. auto-hide after 60 days) via a scheduled job
-- Record settle-up payments inside a room
+- Edit an expense (today: delete and re-add)
+- Push notifications (web push / email digest) for people who aren't on the site
 - Phone number verification by SMS OTP
 - PostGIS if location search needs more than radius queries
 
