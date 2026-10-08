@@ -12,7 +12,10 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-const postAuthPath = (user: AuthUser | null) => (user?.onboardingCompleted ? "/dashboard" : "/onboarding");
+// Super admins land in the admin console; everyone else on their dashboard
+// (or onboarding first).
+const postAuthPath = (user: AuthUser | null) =>
+  user?.role === "super_admin" ? "/admin" : user?.onboardingCompleted ? "/dashboard" : "/onboarding";
 
 // Every flow that ends with "you're signed in" (password login, Google,
 // email verification, password reset) finishes through this.

@@ -36,7 +36,7 @@ export default function AdminRoomsPage() {
 
   return (
     <>
-      <PageHeader title="Rooms" subtitle="Read-only support view of every expense room." />
+      <PageHeader title="Groups" subtitle="Every expense group (flats and trips), read-only for support." />
       <form
         className="flex items-end gap-3 mb-6 max-w-lg"
         onSubmit={(e) => {

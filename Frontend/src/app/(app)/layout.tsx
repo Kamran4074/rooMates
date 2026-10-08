@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useRequireAuth } from "@/lib/auth";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { AppSidebar } from "@/components/app/AppSidebar";
+import { AdminSidebar } from "@/components/app/AdminSidebar";
+import { useAuthStore } from "@/store/authStore";
 import { AppTopbar } from "@/components/app/AppTopbar";
 import { Modal } from "@/components/ui/Modal";
 import { CreateRoomForm } from "@/components/rooms/CreateRoomForm";
@@ -13,15 +15,24 @@ import { JoinRoomForm } from "@/components/rooms/JoinRoomForm";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { ready } = useRequireAuth();
+  const isAdmin = useAuthStore((s) => s.user?.role === "super_admin");
+  // The super admin's account is an operator account: it gets the admin
+  // console, not the member pages (rooms, expenses, history, listings).
+  const adminElsewhere = isAdmin && !pathname.startsWith("/admin") && pathname !== "/settings";
   const loadRooms = useRoomsStore((s) => s.load);
   const modal = useRoomModal((s) => s.open);
   const closeModal = useRoomModal((s) => s.close);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
-    if (ready) loadRooms();
-  }, [ready, loadRooms]);
+    if (ready && !isAdmin) loadRooms();
+  }, [ready, isAdmin, loadRooms]);
+
+  useEffect(() => {
+    if (ready && adminElsewhere) router.replace("/admin");
+  }, [ready, adminElsewhere, router]);
 
   async function openRoom(roomId: string) {
     closeModal();
@@ -29,19 +40,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     router.push(`/rooms/${roomId}`);
   }
 
-  if (!ready) return null;
+  if (!ready || adminElsewhere) return null;
+
+  const Sidebar = isAdmin ? AdminSidebar : AppSidebar;
 
   return (
     <div className="min-h-screen flex bg-background">
       <aside className="hidden lg:block w-64 shrink-0 border-r border-card-border bg-primary/5 h-screen sticky top-0">
-        <AppSidebar />
+        <Sidebar />
       </aside>
 
       {drawerOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-foreground/40" onClick={() => setDrawerOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-72 bg-card shadow-2xl">
-            <AppSidebar onNavigate={() => setDrawerOpen(false)} />
+            <Sidebar onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       )}
