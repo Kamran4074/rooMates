@@ -28,49 +28,207 @@ async function audit(
   logger.info("Admin action", { adminId, action, entityType, entityId });
 }
 
+// "Active" = signed in or refreshed a session within the window (see
+// assertActiveAccount). Deleted (anonymised) accounts are left out of the
+// user numbers except deleted_users.
 export async function getStats() {
   const { rows } = await adminPool.query(
     `SELECT
-       (SELECT COUNT(*)::int FROM users) AS total_users,
-       (SELECT COUNT(*)::int FROM users WHERE suspended_at IS NOT NULL) AS suspended_users,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL) AS total_users,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND created_at > now() - interval '7 days') AS new_users_7d,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND created_at > now() - interval '30 days') AS new_users_30d,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND last_active_at > now() - interval '7 days') AS active_users_7d,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND last_active_at > now() - interval '30 days') AS active_users_30d,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND suspended_at IS NOT NULL) AS suspended_users,
+       (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NOT NULL) AS deleted_users,
+       (SELECT COUNT(*)::int FROM rooms) AS total_rooms,
+       (SELECT COALESCE(round(avg(n), 1), 0)::float8 FROM (SELECT COUNT(*) AS n FROM room_members GROUP BY room_id) s) AS avg_room_size,
+       (SELECT COUNT(*)::int FROM expenses WHERE deleted_at IS NULL) AS total_expenses,
        (SELECT COUNT(DISTINCT owner_id)::int FROM listings) AS listing_owners,
        (SELECT COUNT(*)::int FROM listings) AS total_listings,
        (SELECT COUNT(*)::int FROM listings WHERE status = 'pending') AS pending_listings,
        (SELECT COUNT(*)::int FROM listings WHERE status = 'published') AS published_listings,
-       (SELECT COUNT(*)::int FROM listing_reports WHERE status = 'open') AS open_reports,
-       (SELECT COUNT(*)::int FROM rooms) AS total_rooms`
+       (SELECT COUNT(*)::int FROM listing_reports WHERE status = 'open') AS open_reports`
   );
   return rows[0];
 }
 
 // ---------------- Users ----------------
 
-export async function listUsers(filters: { search?: string; suspended?: "true" | "false" }, page: PageParams) {
+export type UserStatusFilter = "active" | "inactive" | "suspended" | "deleted";
+export type UserSort = "newest" | "oldest" | "last_active";
+
+const USER_STATUS_SQL: Record<UserStatusFilter | "all", string> = {
+  all: "u.deleted_at IS NULL",
+  active: "u.deleted_at IS NULL AND u.suspended_at IS NULL AND u.last_active_at > now() - interval '30 days'",
+  inactive:
+    "u.deleted_at IS NULL AND u.suspended_at IS NULL AND (u.last_active_at IS NULL OR u.last_active_at <= now() - interval '30 days')",
+  suspended: "u.deleted_at IS NULL AND u.suspended_at IS NOT NULL",
+  deleted: "u.deleted_at IS NOT NULL",
+};
+const USER_SORT_SQL: Record<UserSort, string> = {
+  newest: "u.created_at DESC",
+  oldest: "u.created_at ASC",
+  last_active: "u.last_active_at DESC NULLS LAST",
+};
+
+export async function listUsers(
+  filters: { search?: string; status?: UserStatusFilter; sort?: UserSort },
+  page: PageParams
+) {
   const { limit, offset } = toLimitOffset(page);
+  // Status/sort come from a closed enum (Zod) mapped to fixed SQL - never user text.
   const { rows } = await adminPool.query(
-    `SELECT u.id, u.name, u.email, u.phone, u.role, u.suspended_at, u.created_at,
+    `SELECT u.id, u.name, u.email, u.phone, u.picture, u.role, u.suspended_at, u.deleted_at,
+            u.created_at, u.last_active_at,
+            (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
             (SELECT COUNT(*)::int FROM listings l WHERE l.owner_id = u.id) AS listing_count,
             (SELECT COUNT(*)::int FROM room_members rm WHERE rm.user_id = u.id) AS room_count,
             COUNT(*) OVER() AS total_count
      FROM users u
-     WHERE ($1::text IS NULL OR u.name ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%')
-       AND ($2::text IS NULL OR (u.suspended_at IS NOT NULL) = ($2 = 'true'))
-     ORDER BY u.created_at DESC
-     LIMIT $3 OFFSET $4`,
-    [filters.search || null, filters.suspended ?? null, limit, offset]
+     WHERE ${USER_STATUS_SQL[filters.status ?? "all"]}
+       AND ($1::text IS NULL OR u.name ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%')
+     ORDER BY ${USER_SORT_SQL[filters.sort ?? "newest"]}
+     LIMIT $2 OFFSET $3`,
+    [filters.search || null, limit, offset]
   );
   return paginate(rows, page);
+}
+
+// Everything support needs on one screen: the account, its groups (with
+// size and the person's balance in each), listings, sessions and history.
+export async function getUser(userId: string) {
+  const client = await adminPool.connect();
+  try {
+    const user = await client.query(
+      `SELECT u.id, u.name, u.email, u.phone, u.picture, u.role, u.suspended_at, u.deleted_at,
+              u.created_at, u.last_active_at, u.email_verified, u.onboarding_completed,
+              (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
+              o.plan, o.max_rooms,
+              (SELECT COUNT(*)::int FROM refresh_tokens rt
+                WHERE rt.user_id = u.id AND rt.revoked_at IS NULL AND rt.expires_at > now()) AS active_sessions
+       FROM users u JOIN organizations o ON o.id = u.organization_id
+       WHERE u.id = $1`,
+      [userId]
+    );
+    if (!user.rows[0]) throw new AppError("User not found", 404);
+
+    const rooms = await client.query(
+      `SELECT r.id, r.name, r.type, rm.role, rm.joined_at,
+              (SELECT COUNT(*)::int FROM room_members m WHERE m.room_id = r.id) AS member_count,
+              COALESCE((SELECT SUM(l.amount_paise) FROM room_ledger l
+                        WHERE l.room_id = r.id AND l.user_id = $1), 0)::float8 AS net_paise
+       FROM room_members rm JOIN rooms r ON r.id = rm.room_id
+       WHERE rm.user_id = $1
+       ORDER BY rm.joined_at DESC`,
+      [userId]
+    );
+    const listings = await client.query(
+      `SELECT id, title, status, city, created_at FROM listings WHERE owner_id = $1 ORDER BY created_at DESC LIMIT 20`,
+      [userId]
+    );
+    const history = await client.query(
+      `SELECT a.id, a.action, a.details, a.created_at, adm.name AS admin_name
+       FROM audit_logs a LEFT JOIN users adm ON adm.id = a.admin_id
+       WHERE a.entity_type = 'user' AND a.entity_id = $1
+       ORDER BY a.created_at DESC LIMIT 20`,
+      [userId]
+    );
+    return { ...user.rows[0], rooms: rooms.rows, listings: listings.rows, history: history.rows };
+  } finally {
+    client.release();
+  }
+}
+
+// "Delete" = anonymise. The row stays because other people's expenses and
+// payments reference it; everything personal goes, and nobody can sign in.
+// Refused while they still owe or are owed money in any room - deleting them
+// then would leave the others' balances not adding up.
+// Their rooms: a room only they were in is deleted; a room they ran gets the
+// longest-standing member as its new admin. Their listings are taken down and
+// their requests to other listings removed.
+export async function deleteUser(adminId: string, userId: string, reason: string) {
+  if (userId === adminId) throw new AppError("You can't delete your own account", 400);
+  return withAdminTransaction(async (client) => {
+    const { rows } = await client.query<{ role: string; deleted_at: Date | null }>(
+      "SELECT role, deleted_at FROM users WHERE id = $1 FOR UPDATE",
+      [userId]
+    );
+    const user = rows[0];
+    if (!user) throw new AppError("User not found", 404);
+    if (user.deleted_at) throw new AppError("This account is already deleted", 409);
+    if (user.role === "super_admin") {
+      throw new AppError("Remove their super admin role first (npm run make-admin -- <email> --remove)", 403);
+    }
+
+    const unsettled = await client.query<{ name: string }>(
+      `SELECT r.name FROM room_ledger l JOIN rooms r ON r.id = l.room_id
+       WHERE l.user_id = $1 GROUP BY r.id, r.name HAVING SUM(l.amount_paise) <> 0`,
+      [userId]
+    );
+    if (unsettled.rows.length) {
+      throw new AppError(
+        `They still have money to settle in: ${unsettled.rows.map((r) => r.name).join(", ")}. Settle up first.`,
+        409
+      );
+    }
+
+    const soloRooms = await client.query(
+      `DELETE FROM rooms r
+       WHERE r.id IN (SELECT room_id FROM room_members WHERE user_id = $1)
+         AND NOT EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = r.id AND m.user_id <> $1)
+       RETURNING r.id`,
+      [userId]
+    );
+    const left = await client.query<{ room_id: string; role: string }>(
+      "DELETE FROM room_members WHERE user_id = $1 RETURNING room_id, role",
+      [userId]
+    );
+    const adminRooms = left.rows.filter((r) => r.role === "admin").map((r) => r.room_id);
+    for (const roomId of adminRooms) {
+      await client.query(
+        `UPDATE room_members SET role = 'admin'
+         WHERE id = (SELECT id FROM room_members WHERE room_id = $1 ORDER BY joined_at LIMIT 1)`,
+        [roomId]
+      );
+    }
+
+    const listings = await client.query(
+      `UPDATE listings SET status = 'removed', rejection_reason = 'The owner''s account was deleted'
+       WHERE owner_id = $1 AND status NOT IN ('removed', 'rented')`,
+      [userId]
+    );
+    await client.query("DELETE FROM listing_requests WHERE requester_id = $1", [userId]);
+    await client.query("DELETE FROM otp_codes WHERE user_id = $1", [userId]);
+    await client.query("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL", [userId]);
+    await client.query(
+      `UPDATE users SET name = 'Deleted user', email = 'deleted-' || id || '@deleted.invalid',
+              phone = NULL, picture = NULL, google_id = NULL, password_hash = NULL,
+              email_verified = false, deleted_at = now()
+       WHERE id = $1`,
+      [userId]
+    );
+
+    const summary = {
+      roomsDeleted: soloRooms.rowCount ?? 0,
+      roomsLeft: left.rows.length,
+      adminHandedOver: adminRooms.length,
+      listingsRemoved: listings.rowCount ?? 0,
+    };
+    await audit(client, adminId, "DELETED_USER", "user", userId, { reason, ...summary });
+    return { id: userId, deleted: true, ...summary };
+  });
 }
 
 export async function setSuspended(adminId: string, userId: string, suspend: boolean, reason?: string) {
   if (userId === adminId) throw new AppError("You can't suspend your own account", 400);
   return withAdminTransaction(async (client) => {
-    const { rows } = await client.query<{ role: string; suspended_at: Date | null }>(
-      "SELECT role, suspended_at FROM users WHERE id = $1 FOR UPDATE",
+    const { rows } = await client.query<{ role: string; suspended_at: Date | null; deleted_at: Date | null }>(
+      "SELECT role, suspended_at, deleted_at FROM users WHERE id = $1 FOR UPDATE",
       [userId]
     );
     const user = rows[0];
-    if (!user) throw new AppError("User not found", 404);
+    if (!user || user.deleted_at) throw new AppError("User not found", 404);
     if (user.role === "super_admin") throw new AppError("Super admins can't be suspended", 403);
     if (Boolean(user.suspended_at) === suspend) {
       throw new AppError(suspend ? "Already suspended" : "This account isn't suspended", 409);

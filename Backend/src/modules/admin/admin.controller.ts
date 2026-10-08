@@ -20,9 +20,18 @@ export async function handleStats(_req: Request, res: Response) {
 }
 
 export async function handleUsers(req: Request, res: Response) {
-  const { search, suspended, page, limit } = usersQuery.parse(req.query);
-  const { data, pagination } = await admin.listUsers({ search, suspended }, { page, limit });
+  const { search, status, sort, page, limit } = usersQuery.parse(req.query);
+  const { data, pagination } = await admin.listUsers({ search, status, sort }, { page, limit });
   sendSuccess(res, data, { pagination });
+}
+
+export async function handleUser(req: Request, res: Response) {
+  sendSuccess(res, await admin.getUser(id(req)));
+}
+
+export async function handleDeleteUser(req: Request, res: Response) {
+  const { reason } = reasonSchema.parse(req.body ?? {});
+  sendSuccess(res, await admin.deleteUser(req.auth!.sub, id(req), reason), { message: "Account deleted" });
 }
 
 export async function handleSuspend(req: Request, res: Response) {

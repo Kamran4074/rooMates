@@ -272,16 +272,25 @@ export async function issueRefreshToken(userId: string): Promise<string> {
 // reset-password), so a suspended account can't get a session by any route.
 // Returns the role so the client can show admin UI - the server still checks
 // the role again on every admin request.
+//
+// It also stamps last_active_at (for the admin's "last active" column). Every
+// session refresh passes through here too, so an open app updates it about
+// every 15 minutes - without a write on every API request.
 export async function assertActiveAccount(userId: string): Promise<PlatformRole> {
-  const { rows } = await withUserContext(userId, (client) =>
-    client.query<{ role: PlatformRole; suspended_at: Date | null }>(
-      "SELECT role, suspended_at FROM users WHERE id = $1",
+  return withUserContext(userId, async (client) => {
+    const { rows } = await client.query<{ role: PlatformRole; suspended_at: Date | null; deleted_at: Date | null }>(
+      "SELECT role, suspended_at, deleted_at FROM users WHERE id = $1",
       [userId]
-    )
-  );
-  if (!rows[0]) throw new AppError("Account not found", 401);
-  if (rows[0].suspended_at) throw new AppError("This account has been suspended. Contact support.", 403);
-  return rows[0].role;
+    );
+    if (!rows[0] || rows[0].deleted_at) throw new AppError("Account not found", 401);
+    if (rows[0].suspended_at) throw new AppError("This account has been suspended. Contact support.", 403);
+    await client.query(
+      `UPDATE users SET last_active_at = now()
+       WHERE id = $1 AND (last_active_at IS NULL OR last_active_at < now() - interval '5 minutes')`,
+      [userId]
+    );
+    return rows[0].role;
+  });
 }
 
 export async function issueTokenPair(user: AuthenticatedUser): Promise<TokenPair & { role: PlatformRole }> {

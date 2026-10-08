@@ -818,14 +818,24 @@ route("patch", "/api/requests/{requestId}", "Requests", "Owner accepts or reject
 
 const adminOnly = { 401: "Not signed in", 403: "Not a super admin" };
 const idParams = z.object({ id: z.string().uuid() });
-route("get", "/api/admin/stats", "Admin", "Dashboard counts: users, owners, listings by status, open reports, rooms", {
+route("get", "/api/admin/stats", "Admin", "Dashboard counts: users (new / active in 7 and 30 days, suspended, deleted), rooms and average size, expenses, listings, open reports", {
   ok: z.record(z.string(), z.number()),
   errors: adminOnly,
 });
-route("get", "/api/admin/users", "Admin", "Users, with search and a suspended filter", {
+route("get", "/api/admin/users", "Admin", "Users with search, status (active/inactive = used in the last 30 days or not, suspended, deleted) and sort", {
   query: usersQuery,
-  ok: page(z.object({ id: z.string(), name: z.string(), email: z.string(), role: z.string(), suspended_at: z.string().nullable() })),
+  ok: page(z.object({ id: z.string(), name: z.string(), email: z.string(), role: z.string(), suspended_at: z.string().nullable(), deleted_at: z.string().nullable(), created_at: z.string(), last_active_at: z.string().nullable(), room_count: z.number(), listing_count: z.number(), has_google: z.boolean(), has_password: z.boolean() })),
   errors: adminOnly,
+});
+route("get", "/api/admin/users/{id}", "Admin", "One account for support: profile, groups (size + their balance), listings, active sessions, admin history", {
+  params: idParams,
+  errors: { ...adminOnly, 404: "No such user" },
+});
+route("post", "/api/admin/users/{id}/delete", "Admin", "Delete (anonymise) an account. Refused while they have money to settle; solo rooms are deleted, rooms they ran get a new admin, listings are taken down (audit-logged)", {
+  params: idParams,
+  body: reasonSchema,
+  status: 200,
+  errors: { ...adminOnly, 409: "Unsettled money in a room, or already deleted" },
 });
 route("post", "/api/admin/users/{id}/suspend", "Admin", "Suspend an account: blocks sign-in and revokes its refresh tokens (audit-logged)", {
   params: idParams,

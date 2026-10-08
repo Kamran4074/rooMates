@@ -12,6 +12,8 @@ router.use(authenticate, authorize("super_admin"));
 router.get("/stats", c.handleStats);
 
 router.get("/users", c.handleUsers);
+router.get("/users/:id", c.handleUser);
+router.post("/users/:id/delete", c.handleDeleteUser);
 router.post("/users/:id/suspend", c.handleSuspend);
 router.post("/users/:id/unsuspend", c.handleUnsuspend);
 

@@ -73,9 +73,13 @@ stateDiagram-v2
 Business rules worth knowing: the free plan allows 2 created rooms per account; at most 5 active listings per account; listing photos are limited to 6 (JPG/PNG/WebP, under 5 MB); a member can only be removed from a room once their balance is zero; each user can request and report a listing once; a fund can never be spent below zero, and its participants are fixed when it starts (someone joining the room later isn't asked to pay).
 
 **Super admin**
-- Dashboard counts, review queue (approve / reject with a reason the owner sees), take-downs
+- Dashboard: accounts, new signups and active users (7 / 30 days), suspended and deleted, groups and average group size, expenses, listings and reports
+- Review queue (approve / reject with a reason the owner sees), take-downs
 - Reports: dismiss, resolve, or remove the listing
+- Users: search, filter (active / inactive in the last 30 days, suspended, deleted), sort by signup or last active; each row shows join date, last active and group count
+- User page: profile, sign-in method, signed-in devices, every group with its size and the user's balance, listings, admin history
 - Suspend / restore accounts (ends their sessions)
+- Delete an account = anonymise it: personal data wiped, can't sign in, history kept for the other members. Refused while they still have money to settle; groups only they were in are deleted, groups they ran get a new admin
 - Read-only view of any expense room, for support
 - Break-glass account from the environment: `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` are applied on every start, so a forgotten admin password is fixed by changing the env value and redeploying
 - Audit log of every admin action
@@ -189,7 +193,7 @@ Frontend/src/
 
 | Table | What it holds |
 |---|---|
-| `users`, `organizations` | accounts (role, suspension), billing tenant / room quota |
+| `users`, `organizations` | accounts (role, suspension, `last_active_at`, `deleted_at` for anonymised accounts), billing tenant / room quota |
 | `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
 | `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it; soft delete via `deleted_at`/`deleted_by`) and each member's share (integer paise) |
 | `settlements` | recorded settle-up payments: from, to, amount, `settled_on` (soft delete like expenses) |
@@ -255,7 +259,7 @@ Main groups:
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
 | Listings | `GET /api/listings?city=&minRent=&maxRent=&roomType=`, `GET /api/listings/nearby?lat=&lng=&radiusKm=`, `GET /api/listings/mine`, `POST/PATCH/DELETE /api/listings/:id`, `POST /api/listings/:id/status`, photos, reports |
 | Requests | `POST /api/requests`, `GET /api/requests/sent`, `GET /api/requests/received`, `PATCH /api/requests/:id` |
-| Admin | `GET /api/admin/stats`, `/users`, `/listings`, `/reports`, `/rooms`, `/audit-logs`; approve/reject/remove, suspend, resolve |
+| Admin | `GET /api/admin/stats`, `/users`, `/users/:id`, `/listings`, `/reports`, `/rooms`, `/audit-logs`; approve/reject/remove, suspend, delete user, resolve |
 
 ## Local setup
 

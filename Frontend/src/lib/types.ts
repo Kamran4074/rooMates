@@ -248,3 +248,37 @@ export interface Me {
   max_rooms: number;
   room_count: number;
 }
+
+// ---------------- Admin ----------------
+
+/** A row in the super admin's users list. */
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  picture: string | null;
+  role: "user" | "super_admin";
+  suspended_at: string | null;
+  /** Set when an admin deleted (anonymised) the account. */
+  deleted_at: string | null;
+  created_at: string;
+  /** Last sign-in or session refresh. */
+  last_active_at: string | null;
+  has_google: boolean;
+  has_password: boolean;
+  listing_count: number;
+  room_count: number;
+}
+
+/** GET /api/admin/users/:id */
+export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room_count"> {
+  email_verified: boolean;
+  onboarding_completed: boolean;
+  plan: "free" | "paid";
+  max_rooms: number;
+  active_sessions: number;
+  rooms: { id: string; name: string; type: RoomType; role: "admin" | "member"; joined_at: string; member_count: number; net_paise: number }[];
+  listings: { id: string; title: string; status: ListingStatus; city: string; created_at: string }[];
+  history: { id: string; action: string; details: Record<string, unknown> | null; created_at: string; admin_name: string | null }[];
+}

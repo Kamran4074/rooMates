@@ -3,7 +3,9 @@ import { paginationQuery } from "../../utils/pagination";
 
 export const usersQuery = paginationQuery.extend({
   search: z.string().trim().max(100).optional(),
-  suspended: z.enum(["true", "false"]).optional(),
+  // active / inactive = used / not used in the last 30 days. Default: everyone except deleted.
+  status: z.enum(["active", "inactive", "suspended", "deleted"]).optional(),
+  sort: z.enum(["newest", "oldest", "last_active"]).optional(),
 });
 
 export const listingsQuery = paginationQuery.extend({

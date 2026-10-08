@@ -15,6 +15,8 @@ export function ReasonModal({
   label,
   confirmLabel,
   required = true,
+  description,
+  danger = false,
   onClose,
   onConfirm,
 }: {
@@ -23,6 +25,10 @@ export function ReasonModal({
   label: string;
   confirmLabel: string;
   required?: boolean;
+  /** What will happen, shown above the reason box. */
+  description?: React.ReactNode;
+  /** Red confirm button for destructive actions (delete). */
+  danger?: boolean;
   onClose: () => void;
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
@@ -48,9 +54,10 @@ export function ReasonModal({
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {description && <div className="text-sm text-foreground/70">{description}</div>}
         <TextArea label={label} required={required} minLength={required ? 3 : undefined} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} />
         <FormMessage error={error} />
-        <Button type="submit" variant="dark" loading={busy}>
+        <Button type="submit" variant={danger ? "danger" : "dark"} loading={busy}>
           {confirmLabel}
         </Button>
       </form>
