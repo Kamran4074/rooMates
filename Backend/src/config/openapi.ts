@@ -15,6 +15,8 @@ import { profileSchema } from "../modules/users/users.schema";
 import { contactSchema } from "../modules/contact/contact.schema";
 import { contributionSchema, createFundSchema, disputeSchema, spendSchema } from "../modules/funds/funds.schema";
 import { createSettlementSchema } from "../modules/settlements/settlements.schema";
+import { createCategorySchema, updateCategorySchema } from "../modules/categories/categories.schema";
+import { notificationsQuery } from "../modules/notifications/notifications.routes";
 import {
   createListingSchema,
   listingStatusActionSchema,
@@ -905,6 +907,29 @@ route("post", "/api/rooms/{roomId}/funds/{fundId}/entries/{entryId}/dispute", "F
   status: 200,
   errors: { 403: "Not a record made for you", 409: "Already approved or disputed" },
 });
+const categoryParams = z.object({ roomId: z.string().uuid(), categoryId: z.string().uuid() });
+route("get", "/api/rooms/{roomId}/categories", "Sections", "The room's bill sections (Rent, Groceries...) and who shares each", {
+  params: z.object({ roomId: z.string().uuid() }),
+});
+route("post", "/api/rooms/{roomId}/categories", "Sections", "Room admin: add a section and pick who shares it", {
+  params: z.object({ roomId: z.string().uuid() }),
+  body: createCategorySchema,
+  errors: { 403: "Not the room admin", 409: "Name already used in this room" },
+});
+route("patch", "/api/rooms/{roomId}/categories/{categoryId}", "Sections", "Room admin: rename a section or change who shares it", {
+  params: categoryParams,
+  body: updateCategorySchema,
+  errors: { 403: "Not the room admin" },
+});
+route("delete", "/api/rooms/{roomId}/categories/{categoryId}", "Sections", "Room admin: delete a section (its expenses keep their splits)", {
+  params: categoryParams,
+  errors: { 403: "Not the room admin" },
+});
+route("get", "/api/notifications", "Notifications", "Activity feed of every room I'm in (written by database triggers; read-only), newest first, with an unread flag", {
+  query: notificationsQuery,
+});
+route("get", "/api/notifications/unread-count", "Notifications", "How many events other people caused since I last opened the feed", {});
+route("post", "/api/notifications/seen", "Notifications", "Mark the feed as read", { status: 204 });
 route("get", "/api/fund-approvals", "Funds", "Payments the collector/admin recorded for me, waiting for my approval, across all my rooms", {});
 route("get", "/api/rooms/{roomId}/funds/{fundId}/close-preview", "Funds", "What closing would do: each person's equal share of the spending and who gets money back or owes", {
   params: fundParams,

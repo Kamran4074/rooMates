@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useRequireAuth } from "@/lib/auth";
+import { useLiveConnection } from "@/lib/live";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
+import { useNotificationsStore } from "@/store/notificationsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { AdminSidebar } from "@/components/app/AdminSidebar";
@@ -24,6 +26,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const adminElsewhere = isAdmin && !pathname.startsWith("/admin") && pathname !== "/settings";
   const loadRooms = useRoomsStore((s) => s.load);
   const loadApprovals = useApprovalsStore((s) => s.load);
+  const loadNotifications = useNotificationsStore((s) => s.load);
   const modal = useRoomModal((s) => s.open);
   const closeModal = useRoomModal((s) => s.close);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -35,8 +38,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Payments waiting for my approval: re-checked on every page change, so a
   // new one shows up (sidebar badge + card) without a full reload.
   useEffect(() => {
-    if (ready && !isAdmin) loadApprovals();
-  }, [ready, isAdmin, pathname, loadApprovals]);
+    if (ready && !isAdmin) {
+      loadApprovals();
+      loadNotifications();
+    }
+  }, [ready, isAdmin, pathname, loadApprovals, loadNotifications]);
+
+  // Live updates for members (the admin console doesn't need them).
+  useLiveConnection(ready && !isAdmin);
 
   useEffect(() => {
     if (ready && adminElsewhere) router.replace("/admin");

@@ -42,10 +42,13 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - Rooms for flatmates or groups for trips (whoever creates one is its admin), joined with an invite code that only the room admin can see or reset
 - The admin can remove members (only once they're settled up; the invite code rotates automatically)
 - Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
+- **Bill sections:** the room admin keeps sections like Rent, Groceries, WiFi, Gas, each with the people who share it. An expense filed under a section is split equally between them (e.g. whoever's away this month isn't charged for groceries); it can be changed for a single expense. New roommates join every section automatically
+- **Notifications:** one feed of everything in your rooms - who added, deleted, paid, approved or disputed what, who joined or left - with payment requests at the top and an unread badge. The feed is written by database triggers and nobody can edit it, so it's the record
+- **Live updates:** pages refresh by themselves when someone else changes something in your room (Server-Sent Events fed by Postgres LISTEN/NOTIFY)
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
 - **Settle up for real:** "Mark as paid" on a suggested payment (or record any payment) and the balances update. One of the two people or the room admin records it
 - Delete a wrong expense or payment (whoever added it, or the room admin). It's a soft delete: the record stays with who deleted it and when
-- Room fund ("kitty"): ₹X per person paid upfront to one collector, partial payments, spending from the pool. **A payment counts only when both sides agree:** a member's own record is confirmed by the collector; a payment the collector/admin records for a member is approved by that member (they get a notification on Dashboard/Expenses and a sidebar badge) or disputed with a reason. Disputed entries never count and can't be deleted; the history shows who recorded, who approved and when. Closing the fund settles the leftover so everyone paid an equal share of what was spent
+- Room fund ("kitty"): ₹X per person - always everyone in the room - paid upfront to one collector, partial payments, spending from the pool. **A payment counts only when both sides agree:** a member's own record is confirmed by the collector; a payment the collector/admin records for a member is approved by that member (they get a notification on Dashboard/Expenses and a sidebar badge) or disputed with a reason. Disputed entries never count and can't be deleted; the history shows who recorded, who approved and when. Closing the fund settles the leftover so everyone paid an equal share of what was spent
 - Monthly expenses view and month-by-month history across rooms
 
 **Room listings**
@@ -257,6 +260,8 @@ Main groups:
 | Auth | `POST /api/auth/signup`, `/verify-email`, `/login`, `/google`, `/refresh`, `/logout`, `/forgot-password`, `/reset-password` |
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
 | Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
+| Bill sections | `GET/POST /api/rooms/:id/categories`, `PATCH/DELETE /api/rooms/:id/categories/:categoryId` (room admin) |
+| Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/seen`, `GET /api/notifications/stream` (live, SSE) |
 | Fund approvals | `GET /api/fund-approvals`, `POST /api/rooms/:id/funds/:fundId/entries/:entryId/confirm`, `.../dispute` |
 | Settle up | `GET/POST /api/rooms/:id/settlements`, `DELETE /api/rooms/:id/settlements/:settlementId` |
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |

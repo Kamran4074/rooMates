@@ -5,6 +5,7 @@ import { pool, adminPool, warmUpPool } from "./config/db";
 import { runMigrations } from "./config/migrate";
 import { scheduleHousekeeping } from "./config/housekeeping";
 import { seedSuperAdmin } from "./config/superAdminSeed";
+import { startRealtime, stopRealtime } from "./config/realtime";
 
 async function start() {
   if (env.MIGRATE_ON_START) {
@@ -27,12 +28,15 @@ async function start() {
   // In the background: requests still work if this is slow or fails.
   warmUpPool().catch((err) => logger.warn("Couldn't pre-open DB connections", { error: (err as Error).message }));
   scheduleHousekeeping();
+  startRealtime().catch((err) => logger.warn("Live updates didn't start", { error: (err as Error).message }));
 
   // Hosts like Render/Railway send SIGTERM on every deploy. Stop accepting new
   // connections, let in-flight requests finish, then close the DB pool - instead
   // of cutting requests off mid-transaction.
   function shutdown(signal: string) {
     logger.info(`${signal} received, shutting down`);
+    // Live-update streams never end on their own; close them first.
+    stopRealtime().catch(() => undefined);
     server.close(() => {
       Promise.all([pool.end(), adminPool.end()]).finally(() => process.exit(0));
     });

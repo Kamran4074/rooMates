@@ -5,6 +5,7 @@ import { ArrowRight, Check, HandCoins, Scale, Trash2 } from "lucide-react";
 import { apiAuthDelete, errorMessage } from "@/lib/api";
 import { rupees, formatDate } from "@/lib/format";
 import { usePagedQuery } from "@/lib/useApiQuery";
+import { useLiveRefresh } from "@/lib/live";
 import type { Member, Payment, Settlement } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -39,6 +40,7 @@ export function SettleUpCard({
   const [error, setError] = useState<string | null>(null);
   const confirm = useConfirm();
   const history = usePagedQuery<Payment>(`/api/rooms/${roomId}/settlements?limit=${RECENT}`, version);
+  useLiveRefresh(history.reload, roomId);
   const payments = history.data?.items ?? [];
   const totalPayments = history.data?.pagination.total ?? 0;
 

@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Hourglass, Lock, PiggyBank, Plu
 import { errorMessage } from "@/lib/api";
 import { rupees } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
+import { useLiveRefresh } from "@/lib/live";
 import type { Fund, FundDetail, FundEntry, Member, Room } from "@/lib/types";
 import { confirmFundEntry, deleteFundEntry, disputeFundEntry } from "@/services/fundsApi";
 import { ReasonModal } from "@/components/ui/ReasonModal";
@@ -50,6 +51,10 @@ export default function RoomFundPage() {
   // Newest fund unless the user picked another one.
   const activeId = selectedId ?? funds[0]?.id ?? null;
   const detailQuery = useApiQuery<FundDetail>(activeId ? `/api/rooms/${roomId}/funds/${activeId}` : null);
+  useLiveRefresh(() => {
+    fundsQuery.reload();
+    detailQuery.reload();
+  }, roomId);
   const fund = detailQuery.data;
 
   function refresh() {

@@ -101,27 +101,32 @@ describe("upfront kitty", () => {
   });
 
   it("a member who paid less than their share owes the collector", async () => {
-    const res = await api(admin, "POST", base(), { name: "Week 2", amountPerMember: 1000, participantIds: [admin.id, bhavya.id, chirag.id] });
+    // Everyone in the room is in it - by now that includes the latecomer.
+    const res = await api(admin, "POST", base(), { name: "Week 2", amountPerMember: 1000 });
     const id = res.body.data.id;
     await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: admin.id, amount: 1000 });
     // Recorded by the admin for Bhavya: counts once Bhavya approves it.
     const forBhavya = await api(admin, "POST", `${base()}/${id}/contributions`, { memberId: bhavya.id, amount: 1000 });
     await api(bhavya, "POST", `${base()}/${id}/entries/${forBhavya.body.data.id}/confirm`);
-    await api(admin, "POST", `${base()}/${id}/spends`, { description: "Food", amount: 1500 }); // ₹500 each; Chirag paid 0
+    await api(admin, "POST", `${base()}/${id}/spends`, { description: "Food", amount: 2000 }); // ₹500 each of 4; Chirag and the latecomer paid 0
     const preview = await api(admin, "GET", `${base()}/${id}/close-preview`);
     // Order follows participant order, which isn't meaningful - compare as a set.
-    expect(preview.body.data.transfers).toHaveLength(2);
+    expect(preview.body.data.transfers).toHaveLength(3);
     expect(preview.body.data.transfers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ userId: bhavya.id, kind: "refund", amountPaise: 50000 }),
         expect.objectContaining({ userId: chirag.id, kind: "collection", amountPaise: 50000 }),
+        expect.objectContaining({ userId: latecomer.id, kind: "collection", amountPaise: 50000 }),
       ])
     );
   });
 
-  it("the collector must be in the fund, and everyone in it must be in the room", async () => {
+  it("a fund always applies to everyone in the room; the collector must be in the room", async () => {
     const outsider = await createUser();
-    expect((await api(admin, "POST", base(), { name: "x", amountPerMember: 1, participantIds: [admin.id, outsider.id] })).status).toBe(400);
-    expect((await api(admin, "POST", base(), { name: "x", amountPerMember: 1, participantIds: [admin.id], collectorId: bhavya.id })).status).toBe(400);
+    expect((await api(admin, "POST", base(), { name: "x", amountPerMember: 1, collectorId: outsider.id })).status).toBe(400);
+    // Trying to leave people out does nothing: everyone is in.
+    const res = await api(admin, "POST", base(), { name: "Everyone", amountPerMember: 1, participantIds: [admin.id] });
+    const fund = await api(admin, "GET", `${base()}/${res.body.data.id}`);
+    expect(fund.body.data.members).toHaveLength(4);
   });
 });

@@ -154,3 +154,8 @@ export async function apiAuthGetPaged<T>(path: string): Promise<{ data: T; pagin
   const body = await readBody(await authFetch(path, { method: "GET" }));
   return { data: body.data, pagination: body.pagination };
 }
+
+// A long-lived authenticated GET (the live-updates event stream). Goes through
+// the same refresh-and-retry as every other call when the access token expired.
+export const apiAuthStream = (path: string, signal: AbortSignal) =>
+  authFetch(path, { method: "GET", signal, headers: { Accept: "text/event-stream" } });

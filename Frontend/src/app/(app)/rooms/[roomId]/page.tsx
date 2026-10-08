@@ -8,7 +8,8 @@ import { apiAuthDelete, errorMessage } from "@/lib/api";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { rupees, formatDate } from "@/lib/format";
 import { useApiQuery, usePagedQuery } from "@/lib/useApiQuery";
-import type { RoomDetail, Member, Expense, RoomBalances, Fund } from "@/lib/types";
+import { useLiveRefresh } from "@/lib/live";
+import type { RoomDetail, Member, Expense, RoomBalances, Fund, Category } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -20,6 +21,8 @@ import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { InviteShare } from "@/components/rooms/InviteShare";
 import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
 import { SettleUpCard } from "@/components/rooms/SettleUpCard";
+import { CategoriesCard } from "@/components/rooms/CategoriesCard";
+import { Badge } from "@/components/ui/Badge";
 import { RoomFundCard } from "@/components/funds/RoomFundCard";
 import { Pagination } from "@/components/ui/Pagination";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -42,6 +45,15 @@ export default function RoomPage() {
   const balancesQuery = useApiQuery<RoomBalances>(`/api/rooms/${roomId}/balances`);
   // Not part of the loading gate below - the fund card just appears when ready.
   const fundsQuery = useApiQuery<Fund[]>(`/api/rooms/${roomId}/funds`);
+  const categoriesQuery = useApiQuery<Category[]>(`/api/rooms/${roomId}/categories`);
+  // Someone else added/deleted/paid something in this room: refetch quietly.
+  useLiveRefresh(() => {
+    roomQuery.reload();
+    membersQuery.reload();
+    expensesQuery.reload();
+    balancesQuery.reload();
+    fundsQuery.reload();
+  }, roomId);
   const latestFund = fundsQuery.data ? (fundsQuery.data[0] ?? null) : undefined;
 
   const room = roomQuery.data;
@@ -178,7 +190,15 @@ export default function RoomPage() {
                   <span className="text-xs text-foreground/45 w-12 shrink-0">{formatDate(exp.expense_date, "short")}</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{exp.description}</p>
-                    <p className="text-xs text-foreground/50">Paid by {exp.paid_by === user?.id ? "you" : exp.paid_by_name}</p>
+                    <p className="text-xs text-foreground/50">
+                      Paid by {exp.paid_by === user?.id ? "you" : exp.paid_by_name}
+                      {exp.shared_by > 0 && exp.shared_by < members.length && ` · split ${exp.shared_by} ways`}
+                    </p>
+                    {exp.category_name && (
+                      <span className="inline-block mt-1">
+                        <Badge>{exp.category_name}</Badge>
+                      </span>
+                    )}
                   </div>
                   <p className="font-semibold">{rupees(Number(exp.amount_paise))}</p>
                   {(isAdmin || exp.created_by === user?.id) && (
@@ -200,6 +220,14 @@ export default function RoomPage() {
 
         <div className="flex flex-col gap-6">
           <RoomFundCard roomId={roomId} fund={latestFund} />
+
+          <CategoriesCard
+            roomId={roomId}
+            members={members}
+            categories={categoriesQuery.data ?? []}
+            isAdmin={isAdmin}
+            onChanged={categoriesQuery.reload}
+          />
 
           <SettleUpCard
             roomId={roomId}

@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus, Receipt, Wallet, PieChart, Scale } from "lucide-react";
 import { useApiQuery } from "@/lib/useApiQuery";
+import { useLiveRefresh } from "@/lib/live";
 import { rupees, formatDate } from "@/lib/format";
 import { currentMonth, shiftMonth, monthLabel, isValidMonth } from "@/lib/month";
 import type { MyExpense } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { FundApprovalsCard } from "@/components/funds/FundApprovalsCard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -21,6 +21,7 @@ import { Table, Th, Td, MobileList } from "@/components/ui/Table";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { AddExpenseAnyRoom } from "@/components/rooms/AddExpenseAnyRoom";
+import { RoomFundButton } from "@/components/funds/RoomFundButton";
 import { LoadingState } from "@/components/ui/Skeleton";
 
 // useSearchParams needs a Suspense boundary or `next build` fails for this route.
@@ -46,6 +47,7 @@ function Expenses() {
 
   const query = new URLSearchParams({ month, ...(roomId && { roomId }) });
   const { data, loading, error, reload } = useApiQuery<MyExpense[]>(`/api/expenses?${query}`);
+  useLiveRefresh(reload);
   const expenses = data ?? [];
 
   const setFilter = (next: { month?: string; room?: string }) => {
@@ -68,13 +70,15 @@ function Expenses() {
         title="Expenses"
         subtitle="Every shared expense across your rooms, month by month."
         actions={
-          <Button variant="dark" size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-4 w-4" /> Add expense
-          </Button>
+          <>
+            <RoomFundButton roomId={roomId} />
+            <Button variant="dark" size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" /> Add expense
+            </Button>
+          </>
         }
       />
 
-      <FundApprovalsCard />
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-1 rounded-full border border-card-border bg-card p-1">

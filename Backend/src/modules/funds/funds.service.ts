@@ -177,11 +177,9 @@ export async function getFund(userId: string, roomId: string, fundId: string) {
 
 export async function createFund(userId: string, roomId: string, input: CreateFundInput) {
   return withUserContext(userId, async (client) => {
-    const roomMembers = await getMemberIds(client, roomId);
-    const participantIds = [...new Set(input.participantIds ?? roomMembers)];
-    if (participantIds.some((id) => !roomMembers.includes(id))) {
-      throw new AppError("Everyone in the fund must be a member of this room", 400);
-    }
+    // A fund always applies to everyone in the room at the time it's opened:
+    // nobody is left out of the per-person amount.
+    const participantIds = await getMemberIds(client, roomId);
 
     const { rows } = await client.query<{ user_id: string }>(
       "SELECT user_id FROM room_members WHERE room_id = $1 AND role = 'admin' LIMIT 1",
@@ -189,7 +187,7 @@ export async function createFund(userId: string, roomId: string, input: CreateFu
     );
     const collectorId = input.collectorId ?? rows[0]?.user_id ?? userId;
     if (!participantIds.includes(collectorId)) {
-      throw new AppError("The collector must be one of the people in the fund", 400);
+      throw new AppError("The collector must be a member of this room", 400);
     }
 
     const id = crypto.randomUUID();

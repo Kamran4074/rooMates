@@ -7,6 +7,7 @@ import { splitEqually, simplifyDebts, Balance } from "../settlement/settlement.a
 import { toPaise } from "../../utils/money";
 import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
 import { getMemberIds, requireMember } from "../rooms/rooms.repository";
+import { getCategory } from "../categories/categories.service";
 
 export async function createExpense(userId: string, roomId: string, input: CreateExpenseInput) {
   const amountPaise = toPaise(input.amount);
@@ -22,9 +23,17 @@ export async function createExpense(userId: string, roomId: string, input: Creat
     if (!memberIds.has(paidBy)) throw new AppError("Whoever paid must be a member of this room", 400);
     const expenseDate = input.expenseDate ?? todayInIndia();
 
+    // A section (Rent, Groceries...) decides who shares the bill by default.
+    const category = input.categoryId ? await getCategory(client, roomId, input.categoryId) : null;
+
     let splits: { userId: string; sharePaise: number }[];
     if (input.splitType === "equal") {
-      splits = splitEqually(amountPaise, [...memberIds]);
+      // Equal split between the people sharing it: chosen for this expense,
+      // else the section's people, else everyone in the room.
+      const sharing = [...new Set(input.participantIds ?? category?.member_ids ?? [...memberIds])];
+      if (sharing.length === 0) throw new AppError("Nobody is in this section yet. Pick who shares this expense.", 400);
+      if (sharing.some((id) => !memberIds.has(id))) throw new AppError("Everyone sharing it must be a member of this room", 400);
+      splits = splitEqually(amountPaise, sharing);
     } else {
       splits = input.splits!.map((s) => ({ userId: s.userId, sharePaise: toPaise(s.amount) }));
 
@@ -48,9 +57,9 @@ export async function createExpense(userId: string, roomId: string, input: Creat
     }
 
     await client.query(
-      `INSERT INTO expenses (id, room_id, paid_by, description, amount_paise, expense_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [expenseId, roomId, paidBy, input.description, amountPaise, expenseDate, userId]
+      `INSERT INTO expenses (id, room_id, paid_by, description, amount_paise, expense_date, created_by, category_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [expenseId, roomId, paidBy, input.description, amountPaise, expenseDate, userId, category?.id ?? null]
     );
 
     // One round trip for all shares instead of one INSERT per member.
@@ -60,7 +69,7 @@ export async function createExpense(userId: string, roomId: string, input: Creat
       [expenseId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
     );
 
-    return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, splits };
+    return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, categoryId: category?.id ?? null, splits };
   });
 }
 
@@ -91,9 +100,12 @@ export async function listExpenses(userId: string, roomId: string, params: PageP
       // the expenses they paid for are still part of the room's history.
       `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.expense_date::text AS expense_date, e.created_at,
               e.created_by, COALESCE(u.name, 'Former member') AS paid_by_name,
+              c.name AS category_name,
+              (SELECT COUNT(*)::int FROM expense_splits es WHERE es.expense_id = e.id AND es.share_paise > 0) AS shared_by,
               COUNT(*) OVER() AS total_count
        FROM expenses e
        LEFT JOIN users u ON u.id = e.paid_by
+       LEFT JOIN expense_categories c ON c.id = e.category_id
        WHERE e.room_id = $1 AND e.deleted_at IS NULL
        ORDER BY e.expense_date DESC, e.created_at DESC
        LIMIT $2 OFFSET $3`,
@@ -163,9 +175,10 @@ export async function listMyExpenses(userId: string, { month, roomId }: MonthExp
       `SELECT e.id, e.description, e.amount_paise, e.expense_date::text AS expense_date, e.created_at, e.paid_by,
               COALESCE(u.name, 'Former member') AS paid_by_name,
               r.id AS room_id, r.name AS room_name, r.type AS room_type,
-              COALESCE(es.share_paise, 0) AS my_share_paise
+              COALESCE(es.share_paise, 0) AS my_share_paise, c.name AS category_name
        FROM expenses e
        JOIN rooms r ON r.id = e.room_id
+       LEFT JOIN expense_categories c ON c.id = e.category_id
        LEFT JOIN users u ON u.id = e.paid_by
        LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
        WHERE e.deleted_at IS NULL

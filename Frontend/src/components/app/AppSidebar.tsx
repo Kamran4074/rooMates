@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Settings, Plus, LogIn, Receipt, History, Search, Megaphone, Inbox } from "lucide-react";
+import { LayoutDashboard, Settings, Plus, LogIn, Receipt, History, Search, Megaphone, Inbox, Bell } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
+import { useNotificationsStore } from "@/store/notificationsStore";
 import { NavLink } from "./NavLink";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const rooms = useRoomsStore((s) => s.rooms);
   const showModal = useRoomModal((s) => s.show);
-  const approvals = useApprovalsStore((s) => s.items.length);
+  // Payment requests waiting for me + feed events I haven't seen.
+  const badge = useApprovalsStore((s) => s.items.length) + useNotificationsStore((s) => s.unread);
 
   return (
     <nav className="h-full flex flex-col gap-6 p-4 overflow-y-auto" onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>
@@ -28,9 +30,15 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
         <NavLink href="/expenses" active={pathname === "/expenses"}>
           <Receipt className="h-4 w-4" /> Expenses
-          {approvals > 0 && (
-            <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-primary text-background text-xs font-semibold inline-flex items-center justify-center" aria-label={`${approvals} payments to approve`}>
-              {approvals}
+        </NavLink>
+        <NavLink href="/notifications" active={pathname === "/notifications"}>
+          <Bell className="h-4 w-4" /> Notifications
+          {badge > 0 && (
+            <span
+              className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-primary text-background text-xs font-semibold inline-flex items-center justify-center"
+              aria-label={`${badge} new`}
+            >
+              {badge > 99 ? "99+" : badge}
             </span>
           )}
         </NavLink>

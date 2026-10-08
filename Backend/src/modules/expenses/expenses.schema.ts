@@ -13,6 +13,12 @@ export const createExpenseSchema = z
       .optional(),
     // Who paid. Defaults to whoever is adding it; must be a room member.
     paidBy: z.string().uuid("Invalid member").optional(),
+    // The bill's section (Rent, Groceries...). Its people are who share an
+    // equal split, unless participantIds says otherwise for this expense.
+    categoryId: z.string().uuid("Invalid section").optional(),
+    // Equal split only: who shares this expense. Default: the section's
+    // people, or everyone in the room.
+    participantIds: z.array(z.string().uuid("Invalid member")).min(1, "Pick at least one person").max(100).optional(),
     // The day it was spent (YYYY-MM-DD). Defaults to today.
     expenseDate: z.iso
       .date("Use YYYY-MM-DD")

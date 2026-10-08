@@ -7,7 +7,7 @@ const base = (roomId: string, fundId: string) => `/api/rooms/${roomId}/funds/${f
 export interface CreateFundInput {
   name: string;
   amountPerMember: number;
-  participantIds: string[];
+  /** Everyone in the room is in the fund; only who collects is chosen. */
   collectorId: string;
 }
 

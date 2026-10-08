@@ -41,6 +41,17 @@ export interface Expense {
   /** Who added it: they (or the room admin) may delete it. */
   created_by: string;
   created_at: string;
+  /** The bill section it was filed under (Rent, Groceries...), if any. */
+  category_name: string | null;
+  /** How many people it's split between. */
+  shared_by: number;
+}
+
+/** A bill section of a room and who shares it (GET /api/rooms/:id/categories). */
+export interface Category {
+  id: string;
+  name: string;
+  member_ids: string[];
 }
 
 export interface Balance {
@@ -248,6 +259,7 @@ export interface MyExpense {
   room_id: string;
   room_name: string;
   room_type: RoomType;
+  category_name: string | null;
 }
 
 export interface MonthSummary {
@@ -345,4 +357,47 @@ export interface OnboardingCounts {
   waiting_profile_completed: number;
   waiting_joined_group: number;
   waiting_first_expense: number;
+}
+
+export type ActivityType =
+  | "expense_added"
+  | "expense_deleted"
+  | "payment_recorded"
+  | "payment_deleted"
+  | "fund_opened"
+  | "fund_closed"
+  | "fund_payment_recorded"
+  | "fund_payment_approved"
+  | "fund_payment_disputed"
+  | "fund_spend"
+  | "fund_settled"
+  | "member_joined"
+  | "member_left"
+  | "member_removed";
+
+/** One row of the activity feed (GET /api/notifications), written by database triggers. */
+export interface ActivityEvent {
+  id: string;
+  type: ActivityType;
+  room_id: string;
+  room_name: string;
+  room_type: RoomType;
+  actor_id: string | null;
+  actor_name: string | null;
+  subject_id: string | null;
+  subject_name: string | null;
+  to_name: string | null;
+  amount_paise: number | null;
+  data: {
+    description?: string;
+    category?: string | null;
+    fund?: string;
+    fund_id?: string;
+    note?: string | null;
+    confirmed?: boolean;
+    kind?: string;
+  };
+  created_at: string;
+  /** Someone else did it after I last opened the feed. */
+  unread: boolean;
 }

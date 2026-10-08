@@ -2,18 +2,28 @@
 
 import { useState } from "react";
 import { apiAuthPost, errorMessage } from "@/lib/api";
-import type { Member } from "@/lib/types";
+import { rupees, todayInIndia } from "@/lib/format";
+import { useApiQuery } from "@/lib/useApiQuery";
+import type { Category, Member } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
-import { todayInIndia } from "@/lib/format";
 import { TextField } from "@/components/ui/TextField";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Avatar } from "@/components/ui/Avatar";
+import { MemberPicker } from "./MemberPicker";
 
+// Add an expense. Picking a bill section (Rent, Groceries...) ticks the people
+// who share that bill; untick or tick anyone for this one expense. The amount
+// is split equally between the ticked people - or type custom amounts.
 export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; members: Member[]; onAdded: () => void }) {
   const myId = useAuthStore((s) => s.user?.id);
+  const { data: categories = [] } = useApiQuery<Category[]>(`/api/rooms/${roomId}/categories`);
+  const everyone = members.map((m) => m.user_id);
+
+  const [categoryId, setCategoryId] = useState("");
+  const [participantIds, setParticipantIds] = useState<string[]>(everyone);
   const [paidBy, setPaidBy] = useState(myId ?? members[0]?.user_id ?? "");
   const [expenseDate, setExpenseDate] = useState(todayInIndia);
   const [description, setDescription] = useState("");
@@ -26,7 +36,16 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
   const amountNum = parseFloat(amount) || 0;
   const customTotal = Object.values(customSplits).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
   const customMismatch = splitType === "custom" && Math.abs(customTotal - amountNum) > 0.01;
-  const perHead = members.length ? amountNum / members.length : 0;
+  const nobody = splitType === "equal" && participantIds.length === 0;
+  const perHead = participantIds.length ? (amountNum * 100) / participantIds.length : 0;
+
+  function chooseCategory(id: string) {
+    setCategoryId(id);
+    const category = categories.find((c) => c.id === id);
+    // Only people still in the room (a section can't hold anyone else, but be safe).
+    setParticipantIds(category ? category.member_ids.filter((m) => everyone.includes(m)) : everyone);
+    if (category && !description) setDescription(category.name);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,9 +58,10 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
         paidBy,
         expenseDate,
         splitType,
-        ...(splitType === "custom" && {
-          splits: members.map((m) => ({ userId: m.user_id, amount: parseFloat(customSplits[m.user_id] || "0") })),
-        }),
+        ...(categoryId && { categoryId }),
+        ...(splitType === "equal"
+          ? { participantIds }
+          : { splits: members.map((m) => ({ userId: m.user_id, amount: parseFloat(customSplits[m.user_id] || "0") })) }),
       });
       onAdded();
     } catch (err) {
@@ -53,6 +73,16 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {categories.length > 0 && (
+        <Select label="Section" value={categoryId} onChange={(e) => chooseCategory(e.target.value)}>
+          <option value="">No section</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      )}
       <TextField label="Description" required maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Groceries, Wi-Fi bill" />
       <TextField label="Amount (₹)" required type="number" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
 
@@ -72,14 +102,19 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
         onChange={setSplitType}
         options={[
           { value: "equal", label: "Split equally" },
-          { value: "custom", label: "Custom split" },
+          { value: "custom", label: "Custom amounts" },
         ]}
       />
 
       {splitType === "equal" ? (
-        <p className="text-sm text-foreground/55">
-          {members.length} {members.length === 1 ? "person" : "people"} · about ₹{perHead.toFixed(2)} each
-        </p>
+        <>
+          <MemberPicker members={members} selected={participantIds} onChange={setParticipantIds} myId={myId} />
+          <p className={`text-sm ${nobody ? "text-danger" : "text-foreground/55"}`}>
+            {nobody
+              ? "Pick at least one person."
+              : `${participantIds.length} ${participantIds.length === 1 ? "person" : "people"} · about ${rupees(perHead)} each`}
+          </p>
+        </>
       ) : (
         <div className="flex flex-col gap-2 rounded-2xl border border-card-border p-3">
           {members.map((m) => (
@@ -104,7 +139,7 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
       )}
 
       <FormMessage error={error} />
-      <Button type="submit" variant="dark" loading={submitting} disabled={customMismatch}>
+      <Button type="submit" variant="dark" loading={submitting} disabled={customMismatch || nobody}>
         {submitting ? "Adding..." : "Add expense"}
       </Button>
     </form>

@@ -7,8 +7,6 @@ const userId = z.string().uuid("Invalid member");
 export const createFundSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(60),
   amountPerMember: rupees,
-  // Who's in this fund. Defaults to everyone in the room right now.
-  participantIds: z.array(userId).min(1, "Pick at least one person").max(100).optional(),
   // Who holds the cash. Defaults to the room admin.
   collectorId: userId.optional(),
 });

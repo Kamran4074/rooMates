@@ -67,6 +67,9 @@ export async function api(user: TestUser | null, method: string, path: string, b
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
 
+// The test server's address, for raw fetches (e.g. event streams).
+export const baseUrlOf = () => baseUrl;
+
 // For non-JSON responses (CSV downloads).
 export async function apiRaw(user: TestUser | null, path: string) {
   const res = await fetch(baseUrl + path, { headers: user ? { Authorization: `Bearer ${user.token}` } : {} });

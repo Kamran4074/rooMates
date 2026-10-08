@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
 import { errorMessage } from "@/lib/api";
 import { rupees } from "@/lib/format";
 import type { Member } from "@/lib/types";
 import { createFund } from "@/services/fundsApi";
 import { TextField } from "@/components/ui/TextField";
 import { Select } from "@/components/ui/Select";
-import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 
@@ -16,8 +14,9 @@ import { FormMessage } from "@/components/ui/FormMessage";
 const defaultName = () =>
   `${new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} fund`;
 
-// Who's in the fund is fixed here (default: everyone), so someone joining the
-// room later isn't asked for money. The collector holds the cash.
+// A fund applies to everyone in the room when it's started - nobody can be
+// left out of the per-person amount. (Someone joining later isn't asked for
+// money for it.) The collector holds the cash.
 export function CreateFundForm({
   roomId,
   members,
@@ -30,27 +29,19 @@ export function CreateFundForm({
   const roomAdmin = members.find((m) => m.role === "admin") ?? members[0];
   const [name, setName] = useState(defaultName);
   const [amount, setAmount] = useState("");
-  const [participantIds, setParticipantIds] = useState(() => members.map((m) => m.user_id));
   const [collectorId, setCollectorId] = useState(roomAdmin?.user_id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const perMember = parseFloat(amount) || 0;
-  const people = members.filter((m) => participantIds.includes(m.user_id));
-
-  function toggle(id: string) {
-    const next = participantIds.includes(id) ? participantIds.filter((x) => x !== id) : [...participantIds, id];
-    setParticipantIds(next);
-    // The collector has to be in the fund.
-    if (!next.includes(collectorId)) setCollectorId(next[0] ?? "");
-  }
+  const people = members;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const fund = await createFund(roomId, { name, amountPerMember: perMember, participantIds, collectorId });
+      const fund = await createFund(roomId, { name, amountPerMember: perMember, collectorId });
       onCreated(fund.id);
     } catch (err) {
       setError(errorMessage(err, "Couldn't create the fund"));
@@ -73,31 +64,6 @@ export function CreateFundForm({
         placeholder="e.g. 1500"
       />
 
-      <div>
-        <p className="text-sm font-medium mb-2">Who&apos;s in?</p>
-        <ul className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-          {members.map((m) => {
-            const on = participantIds.includes(m.user_id);
-            return (
-              <li key={m.user_id}>
-                <button
-                  type="button"
-                  onClick={() => toggle(m.user_id)}
-                  aria-pressed={on}
-                  className={`w-full flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm ${
-                    on ? "border-primary bg-primary/5" : "border-card-border opacity-60"
-                  }`}
-                >
-                  <Avatar name={m.name} picture={m.picture} size={24} />
-                  <span className="flex-1 truncate">{m.name}</span>
-                  {on && <Check className="h-4 w-4 text-primary" />}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
       <Select label="Who collects the money?" value={collectorId} onChange={(e) => setCollectorId(e.target.value)}>
         {people.map((m) => (
           <option key={m.user_id} value={m.user_id}>
@@ -106,11 +72,11 @@ export function CreateFundForm({
         ))}
       </Select>
 
-      {perMember > 0 && people.length > 0 && (
-        <p className="text-sm text-foreground/55">
-          {people.length} {people.length === 1 ? "person" : "people"} · {rupees(perMember * 100 * people.length)} to collect in total
-        </p>
-      )}
+      <p className="text-sm text-foreground/60 rounded-xl bg-primary/5 px-3 py-2">
+        Applies to all {people.length} {people.length === 1 ? "member" : "members"} of the room
+        {perMember > 0 && <> · {rupees(perMember * 100 * people.length)} to collect in total</>}. Payments count once
+        both sides agree.
+      </p>
       <FormMessage error={error} />
       <Button type="submit" variant="dark" loading={submitting} disabled={people.length === 0}>
         {submitting ? "Creating..." : "Start fund"}
