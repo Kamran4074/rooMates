@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { adminPool, withUserContext } from "../src/config/db";
 import { seedSuperAdmin } from "../src/config/superAdminSeed";
-import { api, cleanup, createUser, startServer, trackUserByEmail, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, trackUserByEmail, TestUser, joinRoom } from "./helpers";
 
 // Settle-up payments, soft-deleted expenses, the shared room_ledger balances,
 // and the env-driven super admin seed.
@@ -14,8 +14,8 @@ beforeAll(async () => {
   [admin, aman, bhavya] = await Promise.all([createUser(), createUser(), createUser()]);
   const room = await api(admin, "POST", "/api/rooms", { name: "Ledger flat", type: "roommates" });
   roomId = room.body.data.id;
-  await api(aman, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+  await joinRoom(aman, room.body.data.inviteCode);
+  await joinRoom(bhavya, room.body.data.inviteCode);
 });
 afterAll(cleanup);
 

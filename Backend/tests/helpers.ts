@@ -77,7 +77,28 @@ export async function apiRaw(user: TestUser | null, path: string) {
   return { status: res.status, headers: res.headers, text: await res.text() };
 }
 
-export const validListing =(overrides: Record<string, unknown> = {}) => ({
+// Joining needs the room admin's approval: file the request as `user`, then
+// approve it as the room's admin, both through the real API.
+export async function joinRoom(user: TestUser, inviteCode: string) {
+  const request = await api(user, "POST", "/api/rooms/join", { inviteCode });
+  if (request.status !== 202) return request;
+  const { rows } = await adminPool.query<{ user_id: string; organization_id: string; email: string }>(
+    `SELECT rm.user_id, u.organization_id, u.email FROM room_members rm JOIN users u ON u.id = rm.user_id
+     WHERE rm.room_id = $1 AND rm.role = 'admin'`,
+    [request.body.data.id]
+  );
+  const admin = rows[0];
+  const token = jwt.sign({ sub: admin.user_id, organizationId: admin.organization_id, email: admin.email, name: "Admin" }, env.JWT_SECRET, {
+    expiresIn: "15m",
+  });
+  return api(
+    { id: admin.user_id, email: admin.email, token },
+    "POST",
+    `/api/rooms/${request.body.data.id}/join-requests/${request.body.data.requestId}/approve`
+  );
+}
+
+export const validListing = (overrides: Record<string, unknown> = {}) => ({
   title: "Sunny private room near metro",
   description: "Bright room in a 2BHK, 5 minutes from the metro station, friendly flatmates.",
   rent: 8500,

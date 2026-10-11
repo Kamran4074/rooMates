@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadingState } from "@/components/ui/Skeleton";
 import { FundApprovalsCard } from "@/components/funds/FundApprovalsCard";
+import { JoinRequestsCard } from "@/components/rooms/JoinRequestsCard";
 import { ActivityItem } from "@/components/notifications/ActivityItem";
 
 // "Today" / "Yesterday" / "8 October 2026", in India time like the rest of the app.
@@ -79,6 +80,7 @@ export default function NotificationsPage() {
         }
       />
 
+      <JoinRequestsCard />
       <FundApprovalsCard />
 
       {error ? (

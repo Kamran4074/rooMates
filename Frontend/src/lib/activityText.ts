@@ -5,9 +5,11 @@ import type { ActivityEvent } from "./types";
 // One feed row in plain words: "Kamran added Groceries · ₹600".
 export function describeActivity(e: ActivityEvent, myId?: string): string {
   const who = (id: string | null, name: string | null, you = "You") => (id && id === myId ? you : (name ?? "Former member"));
-  const actor = who(e.actor_id, e.actor_name);
-  const subject = who(e.subject_id, e.subject_name);
-  const subjectLower = who(e.subject_id, e.subject_name, "you");
+  const actor = who(e.actor_id, e.actor_name ?? (e.actor_id === e.subject_id ? (e.data.name ?? null) : null));
+  // Join requests carry the requester's name: they aren't a member, so the room can't look it up.
+  const subjectName = e.subject_name ?? e.data.name ?? null;
+  const subject = who(e.subject_id, subjectName);
+  const subjectLower = who(e.subject_id, subjectName, "you");
   const amount = e.amount_paise !== null ? rupees(e.amount_paise) : "";
   const fund = e.data.fund ?? "the fund";
   const sameActor = e.actor_id !== null && e.actor_id === e.subject_id;
@@ -40,7 +42,12 @@ export function describeActivity(e: ActivityEvent, myId?: string): string {
     case "fund_settled":
       return `${fund}: ${amount} ${e.data.kind === "refund" ? "refunded to" : "collected from"} ${subjectLower}`;
     case "member_joined":
-      return `${subject} joined`;
+      // Joining needs the admin's OK, so it's usually "X approved Y".
+      return sameActor || !e.actor_id ? `${subject} joined` : `${actor} approved ${subjectLower} to join`;
+    case "join_requested":
+      return `${subject} asked to join`;
+    case "join_rejected":
+      return `${actor} declined ${subjectLower === "you" ? "your" : `${subject}'s`} request to join`;
     case "member_left":
       return `${subject} left`;
     case "member_removed":

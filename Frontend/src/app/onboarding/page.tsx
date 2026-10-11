@@ -22,7 +22,7 @@ const STEPS = ["Your profile", "Your first room", "Invite roommates"];
 
 type FirstRoom =
   | { mode: "created"; id: string; name: string; inviteCode: string }
-  | { mode: "joined"; id: string; name: string }
+  | { mode: "requested"; name: string }
   | { mode: "skipped" };
 
 interface OnboardingResponse {
@@ -89,7 +89,7 @@ export default function OnboardingPage() {
         picture: updated.picture ?? undefined,
         onboardingCompleted: updated.onboarding_completed,
       });
-      router.push(firstRoom && firstRoom.mode !== "skipped" ? `/rooms/${firstRoom.id}` : "/dashboard");
+      router.push(firstRoom?.mode === "created" ? `/rooms/${firstRoom.id}` : "/dashboard");
     } catch (err) {
       setError(errorMessage(err, "Couldn't finish setup. Please try again."));
       setFinishing(false);
@@ -146,7 +146,7 @@ export default function OnboardingPage() {
                 {roomMode === "create" ? (
                   <CreateRoomForm submitLabel="Create & continue" onCreated={(r) => chooseRoom({ mode: "created", id: r.id, name: r.name, inviteCode: r.inviteCode })} />
                 ) : (
-                  <JoinRoomForm submitLabel="Join & continue" onJoined={(r) => chooseRoom({ mode: "joined", id: r.id, name: r.name })} />
+                  <JoinRoomForm submitLabel="Request & continue" onRequested={(r) => chooseRoom({ mode: "requested", name: r.name })} />
                 )}
               </Card>
               <div className="flex items-center justify-between mt-5">
@@ -168,8 +168,8 @@ export default function OnboardingPage() {
                 <StepHeading
                   title="You're all set!"
                   subtitle={
-                    firstRoom.mode === "joined"
-                      ? `You've joined "${firstRoom.name}". Invite others from the room page anytime.`
+                    firstRoom.mode === "requested"
+                      ? `Request sent to "${firstRoom.name}". You'll get in as soon as its admin approves - we'll let you know.`
                       : "You can create or join a room from your dashboard whenever you're ready."
                   }
                 />
@@ -186,7 +186,7 @@ export default function OnboardingPage() {
                 )}
                 <FormMessage error={error} />
                 <Button variant="dark" onClick={finish} loading={finishing}>
-                  {finishing ? "Finishing..." : firstRoom.mode === "skipped" ? "Go to dashboard" : "Finish & open room"}
+                  {finishing ? "Finishing..." : firstRoom.mode === "created" ? "Finish & open room" : "Go to dashboard"}
                 </Button>
               </Card>
             </>

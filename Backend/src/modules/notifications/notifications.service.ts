@@ -19,6 +19,8 @@ export async function listNotifications(userId: string, roomId: string | undefin
               (a.created_at > COALESCE(me.notifications_seen_at, '-infinity') AND a.actor_id IS DISTINCT FROM $1) AS unread,
               COUNT(*) OVER() AS total_count
        FROM activity_log a
+       -- Only what happened in a room since I joined it (not its earlier history).
+       JOIN room_members mine ON mine.room_id = a.room_id AND mine.user_id = $1 AND a.created_at >= mine.joined_at
        JOIN rooms r ON r.id = a.room_id
        JOIN users me ON me.id = $1
        LEFT JOIN users actor ON actor.id = a.actor_id
@@ -38,7 +40,9 @@ export async function unreadCount(userId: string) {
   return withUserContext(userId, async (client) => {
     const { rows } = await client.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count
-       FROM activity_log a JOIN users me ON me.id = $1
+       FROM activity_log a
+       JOIN room_members mine ON mine.room_id = a.room_id AND mine.user_id = $1 AND a.created_at >= mine.joined_at
+       JOIN users me ON me.id = $1
        WHERE a.created_at > COALESCE(me.notifications_seen_at, '-infinity')
          AND a.actor_id IS DISTINCT FROM $1`,
       [userId]

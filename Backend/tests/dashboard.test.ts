@@ -1,4 +1,4 @@
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // The dashboard's cross-room views: "who owes what" for funds, and a month's
 // spending by bill section.
@@ -11,8 +11,8 @@ beforeAll(async () => {
   [admin, bhavya, chirag] = await Promise.all([createUser(), createUser(), createUser()]);
   const room = await api(admin, "POST", "/api/rooms", { name: "Dash flat", type: "roommates" });
   roomId = room.body.data.id;
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
-  await api(chirag, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+  await joinRoom(bhavya, room.body.data.inviteCode);
+  await joinRoom(chirag, room.body.data.inviteCode);
 });
 afterAll(cleanup);
 

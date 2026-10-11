@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { adminPool } from "../src/config/db";
-import { api, apiRaw, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, apiRaw, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // Super admin user management: last active, filters, the user detail view and
 // deleting (anonymising) an account.
@@ -43,7 +43,7 @@ describe("users list and detail", () => {
   it("shows a user's groups with their size and the user's balance", async () => {
     const [owner, friend] = await Promise.all([createUser(), createUser()]);
     const room = await api(owner, "POST", "/api/rooms", { name: "Detail flat", type: "roommates" });
-    await api(friend, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+    await joinRoom(friend, room.body.data.inviteCode);
     await api(owner, "POST", `/api/rooms/${room.body.data.id}/expenses`, { description: "Rent", amount: 200, splitType: "equal" });
 
     const res = await api(admin, "GET", `/api/admin/users/${friend.id}`);
@@ -63,7 +63,7 @@ describe("owners view", () => {
   it("lists group owners and people in no group; members only appear under their owner", async () => {
     const [owner, member, loner] = await Promise.all([createUser(), createUser(), createUser()]);
     const room = await api(owner, "POST", "/api/rooms", { name: "Owner's flat", type: "roommates" });
-    await api(member, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+    await joinRoom(member, room.body.data.inviteCode);
 
     const owners = async (u: TestUser) => (await api(admin, "GET", `/api/admin/users?view=owners&search=${u.email}`)).body.data;
     expect(await owners(owner)).toEqual([expect.objectContaining({ id: owner.id, owned_group_count: 1, people_in_groups: 1 })]);
@@ -119,8 +119,8 @@ describe("deleting an account", () => {
     const [owner, friend, third] = await Promise.all([createUser(), createUser(), createUser()]);
     const shared = await api(owner, "POST", "/api/rooms", { name: "Shared flat", type: "roommates" });
     const sharedId = shared.body.data.id;
-    await api(friend, "POST", "/api/rooms/join", { inviteCode: shared.body.data.inviteCode });
-    await api(third, "POST", "/api/rooms/join", { inviteCode: shared.body.data.inviteCode });
+    await joinRoom(friend, shared.body.data.inviteCode);
+    await joinRoom(third, shared.body.data.inviteCode);
     const solo = await api(owner, "POST", "/api/rooms", { name: "Solo trip", type: "trip" });
     await api(friend, "POST", `/api/rooms/${sharedId}/expenses`, { description: "Milk", amount: 300, splitType: "equal" });
 

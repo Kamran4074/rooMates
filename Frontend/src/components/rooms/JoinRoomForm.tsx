@@ -7,13 +7,23 @@ import { TextField } from "@/components/ui/TextField";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 
-export interface JoinedRoom {
+// An invite code only files a request: the room's admin has to approve it
+// before the person can see anything (POST /api/rooms/join -> 202).
+export interface JoinRequested {
   id: string;
   name: string;
   type: RoomType;
+  status: "pending";
+  requestId: string;
 }
 
-export function JoinRoomForm({ onJoined, submitLabel = "Join room" }: { onJoined: (room: JoinedRoom) => void; submitLabel?: string }) {
+export function JoinRoomForm({
+  onRequested,
+  submitLabel = "Request to join",
+}: {
+  onRequested: (room: JoinRequested) => void;
+  submitLabel?: string;
+}) {
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,9 +33,9 @@ export function JoinRoomForm({ onJoined, submitLabel = "Join room" }: { onJoined
     setSubmitting(true);
     setError(null);
     try {
-      onJoined(await apiAuthPost<JoinedRoom>("/api/rooms/join", { inviteCode: inviteCode.trim() }));
+      onRequested(await apiAuthPost<JoinRequested>("/api/rooms/join", { inviteCode: inviteCode.trim() }));
     } catch (err) {
-      setError(errorMessage(err, "Failed to join room"));
+      setError(errorMessage(err, "Couldn't send the request"));
     } finally {
       setSubmitting(false);
     }
@@ -41,10 +51,10 @@ export function JoinRoomForm({ onJoined, submitLabel = "Join room" }: { onJoined
         placeholder="e.g. YJ383ZDK"
         className="tracking-[0.3em] font-mono uppercase"
       />
-      <p className="text-xs text-foreground/50 -mt-2">Ask your roommate for the 8-character code from their room.</p>
+      <p className="text-xs text-foreground/50 -mt-2">Ask your roommate for the 8-character code. The room&apos;s admin approves you before you get in.</p>
       <FormMessage error={error} />
       <Button type="submit" variant="dark" loading={submitting}>
-        {submitting ? "Joining..." : submitLabel}
+        {submitting ? "Sending..." : submitLabel}
       </Button>
     </form>
   );

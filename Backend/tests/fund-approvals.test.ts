@@ -1,4 +1,4 @@
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // Two-sided fund payments: the admin records a member's payment, the member
 // approves it (or disputes it), and the history keeps who did what.
@@ -16,8 +16,8 @@ beforeAll(async () => {
   [admin, bhavya, chirag] = await Promise.all([createUser(), createUser(), createUser()]);
   const room = await api(admin, "POST", "/api/rooms", { name: "Goa trip", type: "trip" });
   roomId = room.body.data.id;
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
-  await api(chirag, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+  await joinRoom(bhavya, room.body.data.inviteCode);
+  await joinRoom(chirag, room.body.data.inviteCode);
   fundId = (await api(admin, "POST", `/api/rooms/${roomId}/funds`, { name: "Kitty", amountPerMember: 1500 })).body.data.id;
 });
 afterAll(cleanup);

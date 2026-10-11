@@ -7,6 +7,8 @@ import { useLiveConnection } from "@/lib/live";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
+import { useJoinRequestsStore } from "@/store/joinRequestsStore";
+import { useToastStore } from "@/store/toastStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { AdminSidebar } from "@/components/app/AdminSidebar";
@@ -28,6 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const loadRooms = useRoomsStore((s) => s.load);
   const loadApprovals = useApprovalsStore((s) => s.load);
   const loadNotifications = useNotificationsStore((s) => s.load);
+  const loadJoinRequests = useJoinRequestsStore((s) => s.load);
   const modal = useRoomModal((s) => s.open);
   const closeModal = useRoomModal((s) => s.close);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -42,8 +45,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (ready && !isAdmin) {
       loadApprovals();
       loadNotifications();
+      loadJoinRequests();
     }
-  }, [ready, isAdmin, pathname, loadApprovals, loadNotifications]);
+  }, [ready, isAdmin, pathname, loadApprovals, loadNotifications, loadJoinRequests]);
 
   // Live updates for members (the admin console doesn't need them).
   useLiveConnection(ready && !isAdmin);
@@ -88,7 +92,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <CreateRoomForm onCreated={(room) => openRoom(room.id)} />
       </Modal>
       <Modal open={modal === "join"} onClose={closeModal} title="Join a room">
-        <JoinRoomForm onJoined={(room) => openRoom(room.id)} />
+        <JoinRoomForm
+          onRequested={(room) => {
+            closeModal();
+            loadJoinRequests();
+            useToastStore.getState().show(`Request sent to "${room.name}" - you'll get in once its admin approves`);
+          }}
+        />
       </Modal>
     </div>
   );

@@ -12,6 +12,7 @@ import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FundApprovalsCard } from "@/components/funds/FundApprovalsCard";
+import { JoinRequestsCard } from "@/components/rooms/JoinRequestsCard";
 import { FundStatusCard } from "@/components/funds/FundStatusCard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +52,7 @@ export default function DashboardPage() {
         }
       />
 
+      <JoinRequestsCard />
       <FundApprovalsCard />
       <div className="mb-6">
         <FundStatusCard />

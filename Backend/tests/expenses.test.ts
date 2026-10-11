@@ -1,5 +1,5 @@
 import { adminPool } from "../src/config/db";
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // Expense payer and date, and the one-admin-per-room rule.
 
@@ -11,7 +11,7 @@ beforeAll(async () => {
   [aman, bhavya, outsider] = await Promise.all([createUser(), createUser(), createUser()]);
   const room = await api(aman, "POST", "/api/rooms", { name: "Payer test", type: "roommates" });
   roomId = room.body.data.id;
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+  await joinRoom(bhavya, room.body.data.inviteCode);
 });
 afterAll(cleanup);
 

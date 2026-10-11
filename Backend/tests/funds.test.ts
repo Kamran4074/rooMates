@@ -1,4 +1,4 @@
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // Room fund as an upfront kitty: the collector holds the cash, members'
 // self-recorded payments need confirming, and closing settles the leftover.
@@ -13,8 +13,8 @@ beforeAll(async () => {
   const room = await api(admin, "POST", "/api/rooms", { name: "Goa trip", type: "trip" });
   roomId = room.body.data.id;
   const code = room.body.data.inviteCode;
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode: code });
-  await api(chirag, "POST", "/api/rooms/join", { inviteCode: code });
+  await joinRoom(bhavya, code);
+  await joinRoom(chirag, code);
 });
 afterAll(cleanup);
 
@@ -28,7 +28,7 @@ describe("upfront kitty", () => {
 
     // Someone joining the room afterwards isn't asked for money.
     const room = await api(admin, "GET", `/api/rooms/${roomId}`);
-    await api(latecomer, "POST", "/api/rooms/join", { inviteCode: room.body.data.invite_code });
+    await joinRoom(latecomer, room.body.data.invite_code);
 
     const fund = await api(admin, "GET", `${base()}/${fundId}`);
     expect(fund.body.data.collector.id).toBe(admin.id);

@@ -11,6 +11,8 @@ import {
   ShoppingBag,
   Trash2,
   UserMinus,
+  UserPlus,
+  UserX,
 } from "lucide-react";
 import { describeActivity } from "@/lib/activityText";
 import type { ActivityEvent } from "@/lib/types";
@@ -33,6 +35,8 @@ const ICONS: Record<ActivityEvent["type"], { icon: typeof Receipt; tone: string 
   member_joined: { icon: LogIn, tone: "bg-primary/10 text-primary" },
   member_left: { icon: LogOut, tone: "bg-foreground/8 text-foreground/60" },
   member_removed: { icon: UserMinus, tone: "bg-foreground/8 text-foreground/60" },
+  join_requested: { icon: UserPlus, tone: "bg-accent/15 text-accent" },
+  join_rejected: { icon: UserX, tone: "bg-foreground/8 text-foreground/60" },
 };
 
 export function ActivityItem({ event, myId, showRoom }: { event: ActivityEvent; myId?: string; showRoom: boolean }) {

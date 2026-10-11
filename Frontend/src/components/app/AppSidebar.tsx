@@ -9,14 +9,16 @@ import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
+import { useJoinRequestsStore } from "@/store/joinRequestsStore";
 import { NavLink } from "./NavLink";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const rooms = useRoomsStore((s) => s.rooms);
   const showModal = useRoomModal((s) => s.show);
-  // Payment requests waiting for me + feed events I haven't seen.
-  const badge = useApprovalsStore((s) => s.items.length) + useNotificationsStore((s) => s.unread);
+  // Things waiting for me (payments, join requests) + feed events I haven't seen.
+  const badge =
+    useApprovalsStore((s) => s.items.length) + useJoinRequestsStore((s) => s.toApprove.length) + useNotificationsStore((s) => s.unread);
 
   return (
     <nav className="h-full flex flex-col gap-6 p-4 overflow-y-auto" onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>

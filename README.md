@@ -40,6 +40,8 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 
 **Expense rooms**
 - Rooms for flatmates or groups for trips (whoever creates one is its admin), joined with an invite code that only the room admin can see or reset
+- **Joining needs the admin's approval:** an invite code only sends a request. The admin gets it live (notification + sidebar badge) and approves or declines; until then the requester can't see the room. The rule is enforced by the database (RLS), not just the API
+- A new member's notifications start from the day they joined - they don't see the room's older history in their feed
 - The admin can remove members (only once they're settled up; the invite code rotates automatically)
 - Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
 - **Bill sections:** the room admin keeps sections like Rent, Groceries, WiFi, Gas, each with the people who share it. An expense filed under a section is split equally between them (e.g. whoever's away this month isn't charged for groceries); it can be changed for a single expense. New roommates join every section automatically
@@ -101,7 +103,7 @@ Everything the project uses, and what for.
 | React | 19 | UI |
 | TypeScript | 5 | Types end to end |
 | Tailwind CSS (`@tailwindcss/postcss`) | 4 | Styling, dark theme, responsive layout |
-| Zustand | 5 | Shared client state: auth session, rooms, approvals, unread notifications, live-update counters, toasts |
+| Zustand | 5 | Shared client state: auth session, rooms, approvals, join requests, unread notifications, live-update counters, toasts |
 | `@react-oauth/google` | 0.13 | "Continue with Google" popup (access-token flow) |
 | lucide-react | 1 | Icons |
 | ESLint + `eslint-config-next` | 9 | Linting (incl. React hooks / React Compiler rules) |
@@ -270,6 +272,7 @@ Frontend/src/
 |---|---|
 | `users`, `organizations` | accounts (role, suspension, `last_active_at`, `deleted_at` for anonymised accounts, `email_verified_at` / `onboarding_completed_at` stamped by a trigger, `notifications_seen_at`), billing tenant / room quota |
 | `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
+| `room_join_requests` | invite-code requests waiting for the room admin (pending/approved/rejected, who decided and when; one pending request per person per room) |
 | `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it; soft delete via `deleted_at`/`deleted_by`) and each member's share (integer paise) |
 | `settlements` | recorded settle-up payments: from, to, amount, `settled_on` (soft delete like expenses) |
 | `room_ledger` (view) | every money movement in a room as +/- per person; **all balances in the app read this one view** (room balances, dashboard, "is this member settled?"). `security_invoker`, so RLS still applies |
@@ -335,7 +338,7 @@ Main groups:
 |---|---|
 | Auth | `POST /api/auth/signup`, `/verify-email`, `/login`, `/google`, `/refresh`, `/logout`, `/forgot-password`, `/reset-password` |
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
-| Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
+| Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join` (202: request sent), `GET /api/rooms/join-requests`, `POST /api/rooms/:id/join-requests/:requestId/approve\|reject`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
 | Bill sections | `GET/POST /api/rooms/:id/categories`, `PATCH/DELETE /api/rooms/:id/categories/:categoryId` (room admin) |
 | Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/seen`; live updates: WebSocket `/api/ws` |
 | Fund approvals | `GET /api/fund-approvals`, `POST /api/rooms/:id/funds/:fundId/entries/:entryId/confirm`, `.../dispute` |
@@ -421,7 +424,7 @@ npm test            # unit tests: settlement algorithm, splits, fund maths, geo,
 npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
 ```
 
-**33 unit tests and 79 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), the activity log (including that the app can't write to it) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**33 unit tests and 84 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 

@@ -68,7 +68,10 @@ export async function createRoom(userId: string, organizationId: string, input: 
   });
 }
 
-export async function joinRoom(userId: string, inviteCode: string) {
+// An invite code files a join request; the room admin approves it (see
+// decideJoinRequest). The database enforces it too: nobody can add themselves
+// to room_members, only the room admin can, for someone with a pending request.
+export async function requestToJoin(userId: string, inviteCode: string) {
   const found = await pool.query<{ room_id: string; name: string; type: string }>(
     "SELECT * FROM find_room_by_invite_code($1)",
     [inviteCode]
@@ -78,21 +81,62 @@ export async function joinRoom(userId: string, inviteCode: string) {
     throw new AppError("Invalid invite code", 404);
   }
 
-  try {
-    await withUserContext(userId, (client) =>
-      client.query("INSERT INTO room_members (room_id, user_id, role) VALUES ($1,$2,'member')", [
-        room.room_id,
-        userId,
-      ])
-    );
-  } catch (err) {
-    if ((err as { code?: string }).code === "23505") {
-      throw new AppError("You're already a member of this room", 409);
-    }
-    throw err;
-  }
+  return withUserContext(userId, async (client) => {
+    const { rows } = await client.query<{ member: boolean }>("SELECT is_room_member($1) AS member", [room.room_id]);
+    if (rows[0].member) throw new AppError("You're already a member of this room", 409);
 
-  return { id: room.room_id, name: room.name, type: room.type };
+    // Asking twice just returns the open request.
+    const existing = await client.query<{ id: string }>(
+      "SELECT id FROM room_join_requests WHERE room_id = $1 AND user_id = $2 AND status = 'pending'",
+      [room.room_id, userId]
+    );
+    let requestId = existing.rows[0]?.id;
+    if (!requestId) {
+      const inserted = await client.query<{ id: string }>(
+        "INSERT INTO room_join_requests (room_id, user_id) VALUES ($1, $2) RETURNING id",
+        [room.room_id, userId]
+      );
+      requestId = inserted.rows[0].id;
+    }
+    return { id: room.room_id, name: room.name, type: room.type, status: "pending" as const, requestId };
+  });
+}
+
+// Mine (waiting for someone's OK) and, for rooms I run, others' (waiting for mine).
+export async function listJoinRequests(userId: string) {
+  return withUserContext(userId, async (client) => {
+    const [mine, toApprove] = await Promise.all([
+      client.query("SELECT * FROM my_join_requests()"),
+      client.query("SELECT * FROM join_requests_to_approve()"),
+    ]);
+    return { mine: mine.rows, toApprove: toApprove.rows };
+  });
+}
+
+export async function decideJoinRequest(userId: string, roomId: string, requestId: string, approve: boolean) {
+  return withUserContext(userId, async (client) => {
+    await requireRoomAdmin(client, roomId, userId);
+    const { rows } = await client.query<{ user_id: string; status: string }>(
+      "SELECT user_id, status FROM room_join_requests WHERE id = $1 AND room_id = $2 FOR UPDATE",
+      [requestId, roomId]
+    );
+    const request = rows[0];
+    if (!request) throw new AppError("Join request not found", 404);
+    if (request.status !== "pending") throw new AppError(`This request was already ${request.status}`, 409);
+
+    if (approve) {
+      // While the request is still pending - that's what the RLS policy checks.
+      await client.query("INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING", [
+        roomId,
+        request.user_id,
+      ]);
+    }
+    await client.query(
+      "UPDATE room_join_requests SET status = $2, decided_by = $3, decided_at = now() WHERE id = $1",
+      [requestId, approve ? "approved" : "rejected", userId]
+    );
+    return { id: requestId, status: approve ? ("approved" as const) : ("rejected" as const) };
+  });
 }
 
 export async function listMyRooms(userId: string) {

@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useLiveStore } from "@/store/liveStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
+import { useJoinRequestsStore } from "@/store/joinRequestsStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { useToastStore } from "@/store/toastStore";
 
@@ -31,7 +32,8 @@ const CLOSE_TOO_MANY = 4002;
 function reloadShared() {
   useApprovalsStore.getState().load();
   useNotificationsStore.getState().load();
-  useRoomsStore.getState().load(); // dashboard / sidebar balances
+  useJoinRequestsStore.getState().load();
+  useRoomsStore.getState().load(); // dashboard / sidebar balances, a newly approved room
 }
 
 function onActivity(event: ActivityEvent) {
@@ -39,7 +41,9 @@ function onActivity(event: ActivityEvent) {
   reloadShared();
   const myId = useAuthStore.getState().user?.id;
   if (event.actor_id !== myId) {
-    const href = event.data.fund_id ? `/rooms/${event.room_id}/fund` : `/rooms/${event.room_id}`;
+    // A declined requester isn't a member, so there's no room page to open.
+    const href =
+      event.type === "join_rejected" ? undefined : event.data.fund_id ? `/rooms/${event.room_id}/fund` : `/rooms/${event.room_id}`;
     useToastStore.getState().show(`${describeActivity(event, myId)} · ${event.room_name}`, href);
   }
 }

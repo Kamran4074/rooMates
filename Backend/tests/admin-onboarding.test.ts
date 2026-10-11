@@ -1,5 +1,5 @@
 import { adminPool } from "../src/config/db";
-import { api, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { api, cleanup, createUser, startServer, TestUser, joinRoom } from "./helpers";
 
 // Onboarding tracker: milestone timestamps (trigger) and each user's stage.
 
@@ -43,7 +43,7 @@ describe("stages", () => {
     expect((await track(user))[0].stage).toBe("joined_group");
 
     const room = await api(friend, "POST", "/api/rooms", { name: "Funnel flat", type: "roommates" });
-    await api(user, "POST", "/api/rooms/join", { inviteCode: room.body.data.inviteCode });
+    await joinRoom(user, room.body.data.inviteCode);
     expect((await track(user))[0].stage).toBe("first_expense");
 
     await api(user, "POST", `/api/rooms/${room.body.data.id}/expenses`, { description: "Milk", amount: 60, splitType: "equal" });

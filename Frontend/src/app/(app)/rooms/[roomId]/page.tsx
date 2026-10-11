@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
+import { JoinRequestsCard } from "@/components/rooms/JoinRequestsCard";
 import { InviteShare } from "@/components/rooms/InviteShare";
 import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
 import { SettleUpCard } from "@/components/rooms/SettleUpCard";
@@ -150,6 +151,14 @@ export default function RoomPage() {
             </Button>
           </>
         }
+      />
+
+      <JoinRequestsCard
+        roomId={roomId}
+        onChanged={() => {
+          membersQuery.reload();
+          balancesQuery.reload();
+        }}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">

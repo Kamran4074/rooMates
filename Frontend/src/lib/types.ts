@@ -373,7 +373,9 @@ export type ActivityType =
   | "fund_settled"
   | "member_joined"
   | "member_left"
-  | "member_removed";
+  | "member_removed"
+  | "join_requested"
+  | "join_rejected";
 
 /** One row of the activity feed (GET /api/notifications), written by database triggers. */
 export interface ActivityEvent {
@@ -396,6 +398,8 @@ export interface ActivityEvent {
     note?: string | null;
     confirmed?: boolean;
     kind?: string;
+    /** join_requested: the requester's name (they aren't a member yet). */
+    name?: string;
   };
   created_at: string;
   /** Someone else did it after I last opened the feed. */
@@ -432,4 +436,12 @@ export interface CategorySpend {
   totalPaise: number;
   mySharePaise: number;
   expenseCount: number;
+}
+
+/** GET /api/rooms/join-requests */
+export interface JoinRequests {
+  /** Mine, waiting for a room admin. */
+  mine: { id: string; room_id: string; room_name: string; room_type: RoomType; created_at: string }[];
+  /** Others', for rooms I run, waiting for me. */
+  toApprove: { id: string; room_id: string; room_name: string; user_id: string; name: string; email: string; picture: string | null; created_at: string }[];
 }

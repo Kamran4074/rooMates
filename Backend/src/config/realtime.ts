@@ -127,6 +127,8 @@ async function deliver(payload: string) {
   ]);
   const event = events[0];
   if (!event) return;
+  // Someone whose join request was declined isn't a member, but should hear about it.
+  if (event.type === "join_rejected" && event.subject_id) members.push({ user_id: event.subject_id });
   for (const { user_id } of members) {
     for (const ws of sockets.get(user_id) ?? []) sendJson(ws, { type: "activity", event: { ...event, unread: event.actor_id !== user_id } });
   }

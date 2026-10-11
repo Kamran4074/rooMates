@@ -2,7 +2,7 @@ import { withUserContext } from "../src/config/db";
 import { WebSocket } from "ws";
 import { env } from "../src/config/env";
 import { CLOSE_AUTH_FAILED, startRealtime, stopRealtime } from "../src/config/realtime";
-import { api, baseUrlOf, cleanup, createUser, httpServer, startServer, TestUser } from "./helpers";
+import { api, baseUrlOf, cleanup, createUser, httpServer, startServer, TestUser, joinRoom } from "./helpers";
 
 // Bill sections (who shares which bill) and the activity log / notifications.
 
@@ -20,8 +20,8 @@ beforeAll(async () => {
   const room = await api(admin, "POST", "/api/rooms", { name: "Flat 3B", type: "roommates" });
   roomId = room.body.data.id;
   inviteCode = room.body.data.inviteCode;
-  await api(bhavya, "POST", "/api/rooms/join", { inviteCode });
-  await api(chirag, "POST", "/api/rooms/join", { inviteCode });
+  await joinRoom(bhavya, inviteCode);
+  await joinRoom(chirag, inviteCode);
 });
 afterAll(cleanup);
 
@@ -61,7 +61,7 @@ describe("sections", () => {
 
   it("new members join every section; removed members leave them", async () => {
     const dev = await createUser();
-    await api(dev, "POST", "/api/rooms/join", { inviteCode: (await api(admin, "GET", rooms())).body.data.invite_code });
+    await joinRoom(dev, (await api(admin, "GET", rooms())).body.data.invite_code);
     let section = (await api(admin, "GET", `${rooms()}/categories`)).body.data[0];
     expect(section.member_ids).toContain(dev.id);
 
