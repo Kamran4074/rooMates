@@ -4,6 +4,7 @@ import { pool, withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
 import { CreateRoomInput } from "./rooms.schema";
 import { requireRoomAdmin } from "./rooms.repository";
+import { PLAN_LIMITS } from "../../config/plans";
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) since people type this by hand.
 const INVITE_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -14,7 +15,7 @@ function generateInviteCode(length = 8): string {
     .join("");
 }
 
-const FREE_TIER_MAX_ROOMS = 2;
+const FREE_TIER_MAX_ROOMS = PLAN_LIMITS.free.maxRooms;
 
 // Only the admin hands out the invite code, so only the admin is sent it.
 // (RLS works on rows, not columns - hiding a column is the query's job.)
@@ -169,9 +170,12 @@ export async function getRoomById(userId: string, roomId: string) {
       `SELECT r.id, r.name, r.type, ${INVITE_CODE_FOR_ADMIN}, me.role AS my_role, r.created_by, r.created_at,
               (SELECT COUNT(*)::int FROM expenses e WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS expense_count,
               (SELECT COALESCE(SUM(e.amount_paise), 0)::float8 FROM expenses e
-                WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS total_spent_paise
+                WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS total_spent_paise,
+              -- Size limit from the owner's plan (their organization row is hidden by RLS).
+              cap.member_count, cap.max_members, cap.plan
        FROM rooms r
        JOIN room_members me ON me.room_id = r.id AND me.user_id = $2
+       LEFT JOIN LATERAL room_capacity(r.id) cap ON true
        WHERE r.id = $1`,
       [roomId, userId]
     );

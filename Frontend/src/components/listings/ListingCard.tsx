@@ -16,7 +16,7 @@ export function ListingCard({ listing, showStatus = false, footer }: { listing: 
         <div className="relative aspect-[4/3] bg-foreground/5">
           {listing.cover_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- Cloudinary already serves resized images
-            <img src={listing.cover_url} alt={listing.title} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+            <img src={listing.cover_url} alt={listing.title} className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
               <ImageOff className="h-8 w-8" />

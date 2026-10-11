@@ -50,6 +50,8 @@ export const reasonSchema = z.object({
   reason: z.string().trim().min(3, "Give a short reason").max(300),
 });
 
+export const planSchema = z.object({ plan: z.enum(["free", "paid"]) });
+
 export const optionalReasonSchema = z.object({
   reason: z.string().trim().max(300).optional(),
 });

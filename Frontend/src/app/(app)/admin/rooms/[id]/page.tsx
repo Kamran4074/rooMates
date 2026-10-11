@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PageError } from "@/components/ui/PageError";
 
 interface AdminRoomDetail {
   id: string;
@@ -25,8 +26,8 @@ interface AdminRoomDetail {
 
 export default function AdminRoomPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: room, error } = useApiQuery<AdminRoomDetail>(`/api/admin/rooms/${id}`);
-  if (error) return <p className="text-danger">{error}</p>;
+  const { data: room, error, notFound, reload } = useApiQuery<AdminRoomDetail>(`/api/admin/rooms/${id}`);
+  if (error) return <PageError error={error} notFound={notFound} onRetry={reload} what="room" backHref="/admin/rooms" backLabel="Back to rooms" />;
   if (!room) return <LoadingState variant="page" />;
 
   return (

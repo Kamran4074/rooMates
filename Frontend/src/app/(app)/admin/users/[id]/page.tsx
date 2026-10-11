@@ -8,7 +8,7 @@ import { errorMessage } from "@/lib/api";
 import { formatDate, rupees, timeAgo } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
 import type { AdminUserDetail } from "@/lib/types";
-import { unsuspendUser } from "@/services/adminApi";
+import { setUserPlan, unsuspendUser } from "@/services/adminApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -19,6 +19,7 @@ import { LoadingState } from "@/components/ui/Skeleton";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { UserAction, UserActionModals } from "@/components/admin/UserActionModals";
 import { UserStatusBadges, signInMethod } from "@/components/admin/UserStatusBadges";
+import { PageError } from "@/components/ui/PageError";
 
 const ACTION_LABELS: Record<string, string> = {
   SUSPENDED_USER: "Suspended",
@@ -37,14 +38,24 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 export default function AdminUserPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: u, error, reload } = useApiQuery<AdminUserDetail>(`/api/admin/users/${id}`);
+  const { data: u, error, notFound, reload } = useApiQuery<AdminUserDetail>(`/api/admin/users/${id}`);
   const [action, setAction] = useState<UserAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  if (error) return <p className="text-danger">{error}</p>;
+  if (error) return <PageError error={error} notFound={notFound} onRetry={reload} what="user" backHref="/admin/users" backLabel="Back to users" />;
   if (!u) return <LoadingState variant="page" />;
 
   const manageable = u.role !== "super_admin" && !u.deleted_at;
+
+  async function changePlan(plan: "free" | "paid") {
+    setActionError(null);
+    try {
+      await setUserPlan(u!.id, plan);
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Couldn't change the plan"));
+    }
+  }
 
   async function restore() {
     setActionError(null);
@@ -102,7 +113,15 @@ export default function AdminUserPage() {
           <Fact label="Signs in with">{signInMethod(u)}</Fact>
           <Fact label="Signed-in devices">{u.active_sessions}</Fact>
           <Fact label="Plan">
-            {u.plan} · up to {u.max_rooms} rooms
+            <span className="capitalize">{u.plan}</span> · {u.max_rooms} rooms, {u.max_members_per_room} people each
+            {manageable && (
+              <button
+                onClick={() => changePlan(u.plan === "paid" ? "free" : "paid")}
+                className="block mt-1 text-xs font-semibold text-primary hover:underline"
+              >
+                {u.plan === "paid" ? "Move to free" : "Upgrade to paid"}
+              </button>
+            )}
           </Fact>
           <Fact label="Email verified">{u.email_verified ? "Yes" : "No"}</Fact>
           {u.suspended_at && <Fact label="Suspended on">{formatDate(u.suspended_at)}</Fact>}

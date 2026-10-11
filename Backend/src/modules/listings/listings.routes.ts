@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { uploadLimiter } from "../../middlewares/rateLimit";
 import { authenticate } from "../../middlewares/authenticate";
 import * as c from "./listings.controller";
 
@@ -19,7 +20,7 @@ router.patch("/:listingId", c.handleUpdate);
 router.delete("/:listingId", c.handleDelete);
 router.post("/:listingId/status", c.handleChangeStatus);
 
-router.post("/:listingId/images/upload-signature", c.handleSignImageUpload);
+router.post("/:listingId/images/upload-signature", uploadLimiter, c.handleSignImageUpload);
 router.post("/:listingId/images", c.handleAddImage);
 router.delete("/:listingId/images/:imageId", c.handleRemoveImage);
 router.post("/:listingId/images/:imageId/cover", c.handleSetCover);

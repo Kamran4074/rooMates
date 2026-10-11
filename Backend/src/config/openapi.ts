@@ -857,6 +857,12 @@ route("post", "/api/admin/users/{id}/suspend", "Admin", "Suspend an account: blo
   errors: { ...adminOnly, 409: "Already suspended" },
 });
 route("post", "/api/admin/users/{id}/unsuspend", "Admin", "Restore a suspended account (audit-logged)", { params: idParams, status: 200, errors: adminOnly });
+route("post", "/api/admin/users/{id}/plan", "Admin", "Move an account to the free or paid plan: sets its room quota and people-per-room limit (audit-logged)", {
+  params: idParams,
+  body: z.object({ plan: z.enum(["free", "paid"]) }),
+  status: 200,
+  errors: { ...adminOnly, 409: "Already on that plan" },
+});
 route("get", "/api/admin/listings", "Admin", "All listings by status; the pending queue is oldest first", {
   query: listingsQuery,
   ok: page(listingCard.pick({ id: true, title: true, city: true, status: true })),

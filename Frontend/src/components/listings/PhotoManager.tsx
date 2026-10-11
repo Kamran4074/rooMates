@@ -51,7 +51,7 @@ export function PhotoManager({ listingId, images, onChange }: { listingId: strin
         {images.map((img) => (
           <div key={img.id} className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-foreground/5 group">
             {/* eslint-disable-next-line @next/next/no-img-element -- Cloudinary-hosted */}
-            <img src={img.url} alt="" className="h-full w-full object-cover" />
+            <img src={img.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             {img.is_primary && (
               <span className="absolute top-2 left-2 rounded-full bg-card/90 px-2 py-0.5 text-xs font-medium">Cover</span>
             )}

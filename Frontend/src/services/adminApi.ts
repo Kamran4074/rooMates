@@ -9,6 +9,7 @@ export const removeListing = (id: string, reason: string) => apiAuthPost(`/api/a
 
 export const suspendUser = (id: string, reason?: string) => apiAuthPost(`/api/admin/users/${id}/suspend`, { reason });
 export const unsuspendUser = (id: string) => apiAuthPost(`/api/admin/users/${id}/unsuspend`, {});
+export const setUserPlan = (id: string, plan: "free" | "paid") => apiAuthPost(`/api/admin/users/${id}/plan`, { plan });
 // Anonymises the account; the API refuses while they have money to settle.
 export const deleteUser = (id: string, reason: string) => apiAuthPost(`/api/admin/users/${id}/delete`, { reason });
 

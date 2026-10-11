@@ -7,6 +7,7 @@ import { apiAuthGetPaged } from "@/lib/api";
 import { formatDate, timeAgo } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
 import type { OnboardingCounts, OnboardingStage, OnboardingUser } from "@/lib/types";
+import { useDebouncedSearch } from "@/lib/useDebouncedSearch";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -87,12 +88,15 @@ function StageBadge({ user }: { user: OnboardingUser }) {
 }
 
 export default function OnboardingTrackerPage() {
-  const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("newest");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
+  const searchBox = useDebouncedSearch((term) => {
+    setSearch(term);
+    setPage(1);
+  });
   const params = new URLSearchParams({ filter, sort, page: String(page), limit: String(limit), ...(search && { search }) });
   const { data, error, loading, reload } = useApiQuery(
     `/api/admin/onboarding?${params}`,
@@ -140,19 +144,15 @@ export default function OnboardingTrackerPage() {
           <div className="flex items-center gap-2 mb-4">
             <form
               className="flex-1 relative"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setSearch(draft.trim());
-                setPage(1);
-              }}
+              onSubmit={searchBox.submit}
             >
               <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/40 pointer-events-none" />
               <input
                 type="search"
                 aria-label="Search people"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Search name, email or mobile, then Enter"
+                value={searchBox.draft}
+                onChange={(e) => searchBox.onChange(e.target.value)}
+                placeholder="Search name, email or mobile"
                 className="w-full h-11 pl-10 pr-4 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary"
               />
             </form>

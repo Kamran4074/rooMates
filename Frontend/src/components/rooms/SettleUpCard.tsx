@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { PaymentDraft, SettlePaymentForm } from "./SettlePaymentForm";
+import type { PaymentDraft } from "./SettlePaymentForm";
+import { SettlePaymentForm } from "@/components/lazyForms";
 
 const RECENT = 5;
 

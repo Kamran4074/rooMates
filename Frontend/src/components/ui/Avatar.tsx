@@ -2,7 +2,7 @@
 export function Avatar({ name, picture, size = 32 }: { name: string; picture?: string | null; size?: number }) {
   if (picture) {
     // eslint-disable-next-line @next/next/no-img-element -- remote Google avatar; next/image would need domain config for a tiny icon
-    return <img src={picture} alt={name} width={size} height={size} className="rounded-full object-cover" referrerPolicy="no-referrer" style={{ width: size, height: size }} />;
+    return <img src={picture} alt={name} loading="lazy" decoding="async" width={size} height={size} className="rounded-full object-cover" referrerPolicy="no-referrer" style={{ width: size, height: size }} />;
   }
   return (
     <span

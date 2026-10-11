@@ -14,6 +14,10 @@ export interface Room {
 export interface RoomDetail extends Room {
   expense_count: number;
   total_spent_paise: number;
+  /** Size limit from the room owner's plan. */
+  member_count: number;
+  max_members: number;
+  plan: "free" | "paid";
 }
 
 /** A room as returned by GET /api/rooms, with the caller's balance in it. */
@@ -280,6 +284,7 @@ export interface Me {
   onboarding_completed: boolean;
   plan: "free" | "paid";
   max_rooms: number;
+  max_members_per_room: number;
   room_count: number;
 }
 
@@ -316,6 +321,7 @@ export interface AdminUser {
 export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room_count" | "owned_group_count" | "people_in_groups"> {
   email_verified: boolean;
   max_rooms: number;
+  max_members_per_room: number;
   active_sessions: number;
   rooms: { id: string; name: string; type: RoomType; role: "admin" | "member"; joined_at: string; member_count: number; net_paise: number }[];
   listings: { id: string; title: string; status: ListingStatus; city: string; created_at: string }[];

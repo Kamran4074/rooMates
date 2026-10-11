@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { ReasonModal } from "@/components/ui/ReasonModal";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PageError } from "@/components/ui/PageError";
 
 interface AdminListing extends Omit<ListingDetail, "is_mine"> {
   owner: { id: string; name: string; email: string; phone: string | null; suspended_at: string | null };
@@ -24,7 +25,7 @@ interface AdminListing extends Omit<ListingDetail, "is_mine"> {
 
 export default function AdminListingPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: l, error, reload } = useApiQuery<AdminListing>(`/api/admin/listings/${id}`);
+  const { data: l, error, notFound, reload } = useApiQuery<AdminListing>(`/api/admin/listings/${id}`);
   const [modal, setModal] = useState<"reject" | "remove" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,7 +43,7 @@ export default function AdminListingPage() {
     }
   }
 
-  if (error) return <p className="text-danger">{error}</p>;
+  if (error) return <PageError error={error} notFound={notFound} onRetry={reload} what="listing" backHref="/admin/listings" backLabel="Back to listings" />;
   if (!l) return <LoadingState variant="page" />;
   const status = LISTING_STATUS[l.status];
 
@@ -71,7 +72,7 @@ export default function AdminListingPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
               {l.images.map((img) => (
                 // eslint-disable-next-line @next/next/no-img-element -- Cloudinary-hosted
-                <a key={img.id} href={img.url} target="_blank" rel="noopener noreferrer"><img src={img.url} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" /></a>
+                <a key={img.id} href={img.url} target="_blank" rel="noopener noreferrer"><img src={img.url} alt="" loading="lazy" decoding="async" className="aspect-[4/3] w-full rounded-xl object-cover" /></a>
               ))}
             </div>
           ) : (

@@ -10,7 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { CategoryForm } from "./CategoryForm";
+import { CategoryForm } from "@/components/lazyForms";
 
 // The room's bill sections and who shares each. Everyone sees them (they
 // decide how expenses are split); only the room admin can change them.

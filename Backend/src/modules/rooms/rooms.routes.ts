@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { joinLimiter } from "../../middlewares/rateLimit";
 import { authenticate } from "../../middlewares/authenticate";
 import {
   handleCreateRoom,
@@ -19,7 +20,7 @@ router.use(authenticate);
 
 router.get("/", handleGetMyRooms);
 router.post("/", handleCreateRoom);
-router.post("/join", handleJoinRoom);
+router.post("/join", joinLimiter, handleJoinRoom);
 router.get("/join-requests", handleListJoinRequests); // before "/:roomId"
 router.get("/:roomId", handleGetRoom);
 router.get("/:roomId/members", handleGetRoomMembers);

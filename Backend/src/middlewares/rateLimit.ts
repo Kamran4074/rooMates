@@ -1,5 +1,7 @@
-import { rateLimit, Options } from "express-rate-limit";
+import { Request } from "express";
+import { ipKeyGenerator, rateLimit, Options } from "express-rate-limit";
 import { slowDown } from "express-slow-down";
+import { verifyAccessToken } from "./authenticate";
 
 // In-memory counters: fine for a single server, but they reset on restart and
 // aren't shared between instances. Once Redis is added, switch these to a
@@ -18,8 +20,39 @@ function limiter(windowMinutes: number, limit: number, message: string, extra: P
   });
 }
 
-// Baseline for every API route, per IP - stops scripted hammering of anything.
-export const apiLimiter = limiter(15, 300, "Too many requests. Please slow down and try again shortly.");
+// Signed in: count per account. Flatmates on one WiFi share a public IP, so
+// per-IP alone would make them use up each other's budget. Signed out (or a
+// bad token): per IP, with IPv6 grouped by /56 so one host can't rotate
+// through its own addresses. Verifying the token is just an HMAC check.
+export function userOrIp(req: Request) {
+  const header = req.headers.authorization;
+  if (header?.startsWith("Bearer ")) {
+    try {
+      return `user:${verifyAccessToken(header.slice(7)).sub}`;
+    } catch {
+      // fall through to the IP
+    }
+  }
+  return ipKeyGenerator(req.ip ?? "");
+}
+
+const READS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// Baseline for every API route - stops scripted hammering of anything.
+export const apiLimiter = limiter(15, 600, "Too many requests. Please slow down and try again shortly.", { keyGenerator: userOrIp });
+
+// Changes (add/delete/approve...) on top of that: generous for a person
+// clicking, tight for a script filling a room with junk expenses.
+export const writeLimiter = limiter(1, 60, "You're doing that too fast. Wait a minute and try again.", {
+  keyGenerator: userOrIp,
+  skip: (req) => READS.has(req.method),
+});
+
+// Each join request pings a room admin, so a user gets a few per hour.
+export const joinLimiter = limiter(60, 10, "Too many join requests. Try again in an hour.", { keyGenerator: userOrIp });
+
+// Each signature lets the browser upload one photo to Cloudinary (real storage cost).
+export const uploadLimiter = limiter(60, 40, "Too many photo uploads. Try again in an hour.", { keyGenerator: userOrIp });
 
 // Per IP: caps how many sign-in attempts one network can make overall.
 export const authLimiter = limiter(15, 20, "Too many sign-in attempts from this network. Try again in 15 minutes.");

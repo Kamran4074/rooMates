@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiAuthGet, apiAuthGetPage, errorMessage, Page } from "./api";
+import { ApiError, apiAuthGet, apiAuthGetPage, errorMessage, Page } from "./api";
 
 interface QueryResult<T> {
   key: string;
   data?: T;
   error?: string;
+  status?: number;
 }
 
 // Authenticated GET with loading/error state. Two guarantees the old ad-hoc
@@ -30,7 +31,8 @@ export function useApiQuery<T>(
     let active = true;
     fetcher(path).then(
       (data) => active && setResult({ key, data }),
-      (err) => active && setResult({ key, error: errorMessage(err, "Something went wrong") })
+      (err) =>
+        active && setResult({ key, error: errorMessage(err, "Something went wrong"), status: err instanceof ApiError ? err.status : undefined })
     );
     return () => {
       active = false;
@@ -44,6 +46,9 @@ export function useApiQuery<T>(
   return {
     data: current?.data,
     error: current?.error ?? null,
+    // The thing in the URL isn't there for you: 404 = no such row, or not
+    // yours to see (RLS answers the same); 400 = a mangled id ("/rooms/abc").
+    notFound: current?.status === 404 || current?.status === 400,
     loading: key !== null && current === null,
     reload: () => setVersion((v) => v + 1),
   };

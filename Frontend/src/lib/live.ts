@@ -36,9 +36,26 @@ function reloadShared() {
   useRoomsStore.getState().load(); // dashboard / sidebar balances, a newly approved room
 }
 
+// Throttled: a burst of events (someone adding five expenses in a row)
+// becomes one refetch per page and per store, not one per event. The first
+// event schedules a refresh; the rest just join it.
+const REFRESH_EVERY_MS = 500;
+let pendingRooms = new Set<string>();
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRefresh(roomId: string) {
+  pendingRooms.add(roomId);
+  refreshTimer ??= setTimeout(() => {
+    const rooms = pendingRooms;
+    pendingRooms = new Set();
+    refreshTimer = null;
+    for (const id of rooms) useLiveStore.getState().bump(id);
+    reloadShared();
+  }, REFRESH_EVERY_MS);
+}
+
 function onActivity(event: ActivityEvent) {
-  useLiveStore.getState().bump(event.room_id);
-  reloadShared();
+  scheduleRefresh(event.room_id);
   const myId = useAuthStore.getState().user?.id;
   if (event.actor_id !== myId) {
     // A declined requester isn't a member, so there's no room page to open.

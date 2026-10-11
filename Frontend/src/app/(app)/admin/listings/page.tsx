@@ -78,7 +78,7 @@ function AdminListings() {
                     <div className="h-14 w-20 shrink-0 rounded-xl overflow-hidden bg-foreground/5 flex items-center justify-center text-foreground/30">
                       {l.cover_url ? (
                         // eslint-disable-next-line @next/next/no-img-element -- Cloudinary-hosted
-                        <img src={l.cover_url} alt="" className="h-full w-full object-cover" />
+                        <img src={l.cover_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       ) : (
                         <ImageOff className="h-5 w-5" />
                       )}

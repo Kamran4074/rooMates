@@ -16,8 +16,7 @@ import { useAuthStore } from "@/store/authStore";
 import { AppTopbar } from "@/components/app/AppTopbar";
 import { Modal } from "@/components/ui/Modal";
 import { Toaster } from "@/components/ui/Toaster";
-import { CreateRoomForm } from "@/components/rooms/CreateRoomForm";
-import { JoinRoomForm } from "@/components/rooms/JoinRoomForm";
+import { CreateRoomForm, JoinRoomForm } from "@/components/lazyForms";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();

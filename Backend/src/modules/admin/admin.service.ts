@@ -1,6 +1,7 @@
 import { PoolClient } from "pg";
 import { adminPool, withAdminTransaction } from "../../config/db";
 import { logger } from "../../config/logger";
+import { Plan, PLAN_LIMITS } from "../../config/plans";
 import { AppError } from "../../middlewares/errorHandler";
 import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
 import { computeRoomBalances } from "../expenses/expenses.service";
@@ -194,7 +195,7 @@ export async function getUser(userId: string) {
       `SELECT u.id, u.name, u.email, u.phone, u.picture, u.role, u.suspended_at, u.deleted_at,
               u.created_at, u.last_active_at, u.email_verified, u.onboarding_completed,
               (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
-              o.plan, o.max_rooms,
+              o.plan, o.max_rooms, o.max_members_per_room,
               (SELECT COUNT(*)::int FROM refresh_tokens rt
                 WHERE rt.user_id = u.id AND rt.revoked_at IS NULL AND rt.expires_at > now()) AS active_sessions
        FROM users u JOIN organizations o ON o.id = u.organization_id
@@ -333,6 +334,33 @@ export async function setSuspended(adminId: string, userId: string, suspend: boo
     }
     await audit(client, adminId, suspend ? "SUSPENDED_USER" : "UNSUSPENDED_USER", "user", userId, reason ? { reason } : undefined);
     return { id: userId, suspended: suspend };
+  });
+}
+
+// Until payments are wired up, an upgrade is done here by the super admin.
+// The plan belongs to the user's organization: it sets how many rooms they
+// can create and how many people fit in each room they own.
+export async function setPlan(adminId: string, userId: string, plan: Plan) {
+  return withAdminTransaction(async (client) => {
+    const { rows } = await client.query<{ organization_id: string; plan: Plan; deleted_at: Date | null }>(
+      `SELECT u.organization_id, o.plan, u.deleted_at
+       FROM users u JOIN organizations o ON o.id = u.organization_id
+       WHERE u.id = $1 FOR UPDATE OF o`,
+      [userId]
+    );
+    const user = rows[0];
+    if (!user || user.deleted_at) throw new AppError("User not found", 404);
+    if (user.plan === plan) throw new AppError(`Already on the ${plan} plan`, 409);
+
+    const limits = PLAN_LIMITS[plan];
+    await client.query("UPDATE organizations SET plan = $2, max_rooms = $3, max_members_per_room = $4 WHERE id = $1", [
+      user.organization_id,
+      plan,
+      limits.maxRooms,
+      limits.maxMembersPerRoom,
+    ]);
+    await audit(client, adminId, "CHANGED_PLAN", "user", userId, { from: user.plan, to: plan });
+    return { id: userId, plan, maxRooms: limits.maxRooms, maxMembersPerRoom: limits.maxMembersPerRoom };
   });
 }
 

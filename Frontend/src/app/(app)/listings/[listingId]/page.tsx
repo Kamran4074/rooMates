@@ -22,12 +22,13 @@ import { PhotoManager } from "@/components/listings/PhotoManager";
 import { ReceivedRequestItem } from "@/components/listings/ReceivedRequestItem";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PageError } from "@/components/ui/PageError";
 
 export default function ListingPage() {
   const { listingId } = useParams<{ listingId: string }>();
-  const { data: listing, error, reload } = useApiQuery<ListingDetail>(`/api/listings/${listingId}`);
+  const { data: listing, error, notFound, reload } = useApiQuery<ListingDetail>(`/api/listings/${listingId}`);
 
-  if (error) return <p className="text-danger">{error}</p>;
+  if (error) return <PageError error={error} notFound={notFound} onRetry={reload} what="listing" backHref="/listings" backLabel="Browse rooms" />;
   if (!listing) return <LoadingState variant="page" />;
 
   return (
@@ -101,7 +102,7 @@ function Gallery({ listing }: { listing: ListingDetail }) {
   return (
     <div className="flex flex-col gap-3">
       {/* eslint-disable-next-line @next/next/no-img-element -- Cloudinary-hosted */}
-      <img src={current.url} alt={listing.title} className="aspect-[16/9] w-full rounded-3xl object-cover bg-foreground/5" />
+      <img src={current.url} alt={listing.title} fetchPriority="high" className="aspect-[16/9] w-full rounded-3xl object-cover bg-foreground/5" />
       {images.length > 1 && (
         <div className="flex gap-2 overflow-x-auto">
           {images.map((img, i) => (
@@ -112,7 +113,7 @@ function Gallery({ listing }: { listing: ListingDetail }) {
               aria-label={`Photo ${i + 1}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- Cloudinary-hosted */}
-              <img src={img.url} alt="" className="h-full w-full object-cover" />
+              <img src={img.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>

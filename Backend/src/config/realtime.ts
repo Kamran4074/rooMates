@@ -54,9 +54,37 @@ function rejectUpgrade(socket: Duplex, status: string) {
   socket.destroy();
 }
 
+// Handshakes per IP per minute. The upgrade never passes through Express,
+// so its rate limiter doesn't cover this; a reconnect loop or a script
+// opening sockets gets a 429 instead.
+export const HANDSHAKES_PER_MINUTE = 30;
+const handshakes = new Map<string, { count: number; resetAt: number }>();
+
+// The caller's IP by the same rule as Express's "trust proxy" N: skip N
+// proxies from the right of X-Forwarded-For (Render adds one).
+function clientIp(req: IncomingMessage) {
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const chain = [...forwarded, req.socket.remoteAddress ?? ""];
+  return chain[Math.max(0, chain.length - 1 - env.TRUST_PROXY)];
+}
+
+function allowHandshake(ip: string) {
+  const now = Date.now();
+  const entry = handshakes.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    handshakes.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  return ++entry.count <= HANDSHAKES_PER_MINUTE;
+}
+
 function onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   if (!wss || new URL(req.url ?? "/", "http://x").pathname !== WS_PATH) return rejectUpgrade(socket, "404 Not Found");
   if (!env.CORS_ORIGIN.includes(req.headers.origin ?? "")) return rejectUpgrade(socket, "403 Forbidden");
+  if (!allowHandshake(clientIp(req))) return rejectUpgrade(socket, "429 Too Many Requests");
   wss.handleUpgrade(req, socket, head, (ws) => wss!.emit("connection", ws, req));
 }
 
@@ -168,6 +196,8 @@ export async function startRealtime(server: Server) {
   wss.on("connection", onConnection);
   server.on("upgrade", onUpgrade);
   heartbeat = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of handshakes) if (entry.resetAt <= now) handshakes.delete(ip);
     for (const ws of wss?.clients ?? []) {
       const live = ws as LiveSocket;
       if (live.alive === false) {

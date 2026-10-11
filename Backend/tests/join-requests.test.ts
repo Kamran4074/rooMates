@@ -23,6 +23,7 @@ describe("join requests", () => {
     expect(res.status).toBe(202);
     expect(res.body.data).toEqual(expect.objectContaining({ id: roomId, name: "Approval flat", status: "pending" }));
     expect((await api(taha, "GET", `/api/rooms/${roomId}`)).status).toBe(404); // not a member yet
+    expect((await api(taha, "GET", "/api/rooms/not-a-real-id")).status).toBe(400); // a mangled link: validation error, not a 500
 
     // Asking again returns the same open request.
     const again = await api(taha, "POST", "/api/rooms/join", { inviteCode });

@@ -82,10 +82,21 @@ export default function DashboardPage() {
             </span>
           </div>
           <ProgressBar value={me?.room_count ?? rooms.length} max={me?.max_rooms ?? 2} />
-          <p className="text-xs text-foreground/50 mt-3 mb-5">Rooms you create count toward your plan. Rooms you join don&apos;t.</p>
-          <Button variant="outline" size="sm" className="mt-auto w-full" disabled title="Coming soon">
-            <Sparkles className="h-4 w-4" /> Upgrade — coming soon
-          </Button>
+          <p className="text-xs text-foreground/50 mt-3">Rooms you create count toward your plan. Rooms you join don&apos;t.</p>
+          <div className="flex items-baseline justify-between mt-4 mb-5 text-sm">
+            <span className="font-medium">People per room</span>
+            <span className="text-foreground/55">
+              up to <strong className="text-foreground">{me?.max_members_per_room ?? 4}</strong>
+            </span>
+          </div>
+          {me?.plan !== "paid" && (
+            <Link
+              href="/contact"
+              className="mt-auto w-full h-9 rounded-full border border-card-border text-sm font-medium inline-flex items-center justify-center gap-1.5 hover:bg-foreground/5"
+            >
+              <Sparkles className="h-4 w-4" /> Upgrade for bigger rooms
+            </Link>
+          )}
         </Card>
       </div>
 

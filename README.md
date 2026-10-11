@@ -75,7 +75,7 @@ stateDiagram-v2
     published --> removed: admin takes down
 ```
 
-Business rules worth knowing: the free plan allows 2 created rooms per account; at most 5 active listings per account; listing photos are limited to 6 (JPG/PNG/WebP, under 5 MB); a member can only be removed from a room once their balance is zero; each user can request and report a listing once; a fund can never be spent below zero, and its participants are fixed when it starts (someone joining the room later isn't asked to pay).
+Business rules worth knowing: the free plan allows 2 created rooms per account and 4 people per room (admin included; paid: 10 rooms, 20 people). A room follows its creator's plan; a full room turns away new join requests, and the limit is enforced by a database trigger that locks the room row, so two approvals at once can't both take the last seat. Rooms already over the limit keep everyone. Until payments are wired up, the super admin switches a user's plan from the admin console (audit-logged); at most 5 active listings per account; listing photos are limited to 6 (JPG/PNG/WebP, under 5 MB); a member can only be removed from a room once their balance is zero; each user can request and report a listing once; a fund can never be spent below zero, and its participants are fixed when it starts (someone joining the room later isn't asked to pay).
 
 **Super admin**
 - Dashboard: accounts, new signups and active users (7 / 30 days), suspended and deleted, groups and average group size, expenses, listings and reports
@@ -124,7 +124,7 @@ Everything the project uses, and what for.
 | google-auth-library | 11 | Verifying Google access tokens (audience + verified email checks) |
 | Helmet | 8 | Security headers (CSP, HSTS, nosniff, frame-ancestors) |
 | cors | 2 | Origin allow-list; exposes `Content-Disposition` for CSV downloads |
-| express-rate-limit / express-slow-down | 8 / 3 | Per-IP and per-account limits, login slow-down |
+| express-rate-limit / express-slow-down | 8 / 3 | Per-user and per-IP limits, login slow-down |
 | Winston + Morgan | 3 / 1 | Structured logs and request logs |
 | ws | 8 | WebSocket server for live updates (`/api/ws`, same port as the API) |
 | dotenv | 18 | Local `.env` loading (validated by Zod at startup) |
@@ -309,7 +309,9 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 ## Security checklist
 
 - Helmet security headers (CSP, HSTS, nosniff, no framing; Swagger docs skip only the CSP), CORS allow-list, JSON body size limit
-- Rate limits: per-IP baseline, per-account login limit, login slow-down, email/OTP limits
+- Rate limits: counted **per signed-in user** (flatmates on one WiFi share a public IP, so per-IP alone would make them use up each other's budget), per IP when signed out: 600 requests / 15 min overall, 60 changes / minute, 10 join requests / hour, 40 photo uploads / hour; plus per-IP sign-in limits, a per-account failed-login limit, login slow-down (throttling: each extra attempt waits longer) and email/OTP limits. WebSocket handshakes: 30 / minute per IP (the upgrade bypasses Express, so it has its own counter)
+- Lazy loading: every page is its own bundle (Next.js route splitting); forms that live in a modal (add expense, settle up, funds, create/join room) are split out with `next/dynamic` and downloaded the first time that modal opens; off-screen images (listing cards, galleries, avatars) use native `loading="lazy"`, while a listing's main photo is fetched first (`fetchPriority="high"`)
+- Frontend: admin searches run as you type, debounced (one request once typing pauses, or at once on Enter); live updates are throttled, so a burst of events becomes one refetch instead of one per event
 - Zod validation on every input; parameterised SQL everywhere (dynamic filters only ever add `$n` placeholders)
 - Passwords bcrypt-hashed (72-byte limit enforced); emails normalised to lowercase
 - JWTs signed and verified with a pinned algorithm (HS256); used OTP codes and expired/revoked refresh tokens are deleted daily
@@ -424,7 +426,7 @@ npm test            # unit tests: settlement algorithm, splits, fund maths, geo,
 npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
 ```
 
-**33 unit tests and 84 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**33 unit tests and 91 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 

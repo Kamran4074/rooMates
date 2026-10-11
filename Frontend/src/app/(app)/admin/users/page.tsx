@@ -7,6 +7,7 @@ import { apiAuthDownload, errorMessage } from "@/lib/api";
 import { formatDate, timeAgo } from "@/lib/format";
 import { useApiQuery, usePagedQuery } from "@/lib/useApiQuery";
 import type { AdminUser } from "@/lib/types";
+import { useDebouncedSearch } from "@/lib/useDebouncedSearch";
 import { unsuspendUser } from "@/services/adminApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -32,7 +33,6 @@ type Sort = "newest" | "oldest" | "last_active" | "least_active";
 // "All accounts" (or any search) lists everyone flat. Each row has contact,
 // groups, last active, an on/off switch (suspend / restore), view / delete.
 export default function AdminUsersPage() {
-  const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState<Sort>("newest");
@@ -42,6 +42,10 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [view, setView] = useState<"owners" | "all">("owners");
+  const searchBox = useDebouncedSearch((term) => {
+    setSearch(term);
+    setPage(1);
+  });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // A search looks through everyone: a member is only nested under their
@@ -121,19 +125,15 @@ export default function AdminUsersPage() {
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <form
           className="flex-1 min-w-60 relative"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSearch(draft.trim());
-            setPage(1);
-          }}
+          onSubmit={searchBox.submit}
         >
           <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/40 pointer-events-none" />
           <input
             type="search"
             aria-label="Search users"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Search name, email or mobile, then Enter"
+            value={searchBox.draft}
+            onChange={(e) => searchBox.onChange(e.target.value)}
+            placeholder="Search name, email or mobile"
             className="w-full h-11 pl-10 pr-4 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary"
           />
         </form>

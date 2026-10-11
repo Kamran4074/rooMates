@@ -4,6 +4,7 @@ import {
   idParam,
   listingsQuery,
   optionalReasonSchema,
+  planSchema,
   reasonSchema,
   reportsQuery,
   resolveReportSchema,
@@ -67,6 +68,11 @@ export async function handleSuspend(req: Request, res: Response) {
 
 export async function handleUnsuspend(req: Request, res: Response) {
   sendSuccess(res, await admin.setSuspended(req.auth!.sub, id(req), false), { message: "Account restored" });
+}
+
+export async function handleSetPlan(req: Request, res: Response) {
+  const { plan } = planSchema.parse(req.body);
+  sendSuccess(res, await admin.setPlan(req.auth!.sub, id(req), plan), { message: `Moved to the ${plan} plan` });
 }
 
 export async function handleListings(req: Request, res: Response) {

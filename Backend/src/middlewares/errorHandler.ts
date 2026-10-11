@@ -27,6 +27,12 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return res.status(err.statusCode).json({ success: false, message: err.message });
   }
 
+  // A room at its plan's size limit (raised by the database, see the
+  // room-member-limit migration). Its message is written for people.
+  if ((err as { code?: string })?.code === "RM001") {
+    return res.status(409).json({ success: false, message: (err as Error).message });
+  }
+
   // Malformed JSON body, from express.json().
   if (err instanceof SyntaxError && "body" in err) {
     return res.status(400).json({ success: false, message: "Request body is not valid JSON" });

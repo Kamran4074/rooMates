@@ -6,7 +6,7 @@ import { env } from "./config/env";
 import { getOpenApiDocument } from "./config/openapi";
 import { requestLogger } from "./middlewares/requestLogger";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler";
-import { apiLimiter } from "./middlewares/rateLimit";
+import { apiLimiter, writeLimiter } from "./middlewares/rateLimit";
 import { checkDbConnection } from "./config/db";
 import authRoutes from "./modules/auth/auth.routes";
 import roomRoutes from "./modules/rooms/rooms.routes";
@@ -44,7 +44,7 @@ app.use(cors({ origin: env.CORS_ORIGIN, maxAge: 86_400, exposedHeaders: ["Conten
 // Bodies here are small forms; a cap stops someone posting a huge payload.
 app.use(express.json({ limit: "100kb" }));
 app.use(requestLogger);
-app.use("/api", apiLimiter);
+app.use("/api", apiLimiter, writeLimiter);
 
 app.get("/api/health", async (_req, res) => {
   const dbConnected = await checkDbConnection();

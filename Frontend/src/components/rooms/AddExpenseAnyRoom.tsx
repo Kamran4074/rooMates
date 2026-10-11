@@ -6,7 +6,7 @@ import type { Member } from "@/lib/types";
 import { useRoomsStore } from "@/store/roomsStore";
 import { Select } from "@/components/ui/Select";
 import { FormMessage } from "@/components/ui/FormMessage";
-import { AddExpenseForm } from "./AddExpenseForm";
+import { AddExpenseForm } from "@/components/lazyForms";
 
 // For places that aren't inside a room (e.g. the Expenses page): pick the
 // room first, then reuse the normal per-room expense form.

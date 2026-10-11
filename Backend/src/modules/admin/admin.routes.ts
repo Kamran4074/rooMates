@@ -20,6 +20,7 @@ router.get("/users/:id/groups", c.handleOwnedGroups);
 router.post("/users/:id/delete", c.handleDeleteUser);
 router.post("/users/:id/suspend", c.handleSuspend);
 router.post("/users/:id/unsuspend", c.handleUnsuspend);
+router.post("/users/:id/plan", c.handleSetPlan);
 
 router.get("/listings", c.handleListings);
 router.get("/listings/:id", c.handleListing);

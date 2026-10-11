@@ -6,6 +6,7 @@ import { Building2 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { usePagedQuery } from "@/lib/useApiQuery";
 import type { RoomType } from "@/lib/types";
+import { useDebouncedSearch } from "@/lib/useDebouncedSearch";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { TextField } from "@/components/ui/TextField";
@@ -27,9 +28,12 @@ interface AdminRoom {
 
 // Support view: open any expense room read-only, to see what its members see.
 export default function AdminRoomsPage() {
-  const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const searchBox = useDebouncedSearch((term) => {
+    setSearch(term);
+    setPage(1);
+  });
   const { data, error } = usePagedQuery<AdminRoom>(
     `/api/admin/rooms?page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ""}`
   );
@@ -39,14 +43,10 @@ export default function AdminRoomsPage() {
       <PageHeader title="Groups" subtitle="Every expense group (flats and trips), read-only for support." />
       <form
         className="flex items-end gap-3 mb-6 max-w-lg"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSearch(draft.trim());
-          setPage(1);
-        }}
+        onSubmit={searchBox.submit}
       >
         <div className="flex-1">
-          <TextField label="Room name" value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <TextField label="Room name" value={searchBox.draft} onChange={(e) => searchBox.onChange(e.target.value)} />
         </div>
         <Button type="submit" size="sm">
           Search

@@ -21,16 +21,14 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
 import { FormMessage } from "@/components/ui/FormMessage";
-import { CreateFundForm } from "@/components/funds/CreateFundForm";
-import { RecordPaymentForm } from "@/components/funds/RecordPaymentForm";
-import { SpendFromFundForm } from "@/components/funds/SpendFromFundForm";
+import { CloseFundPreview, CreateFundForm, RecordPaymentForm, SpendFromFundForm } from "@/components/lazyForms";
 import { FundMembersCard } from "@/components/funds/FundMembersCard";
 import { FundHistory } from "@/components/funds/FundHistory";
 import { FundSettlementCard } from "@/components/funds/FundSettlementCard";
 import { FundMyStatus } from "@/components/funds/FundMyStatus";
-import { CloseFundPreview } from "@/components/funds/CloseFundPreview";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PageError } from "@/components/ui/PageError";
 
 type ModalState = { kind: "create" } | { kind: "pay"; memberId?: string } | { kind: "spend" } | { kind: "close" } | null;
 
@@ -96,7 +94,21 @@ export default function RoomFundPage() {
   }
 
   const error = roomQuery.error ?? membersQuery.error ?? fundsQuery.error ?? detailQuery.error;
-  if (error) return <p className="text-danger">{error}</p>;
+  if (error) {
+    return (
+      <PageError
+        error={error}
+        notFound={roomQuery.notFound || detailQuery.notFound}
+        what={roomQuery.notFound ? "room" : "fund"}
+        onRetry={() => {
+          roomQuery.reload();
+          membersQuery.reload();
+          fundsQuery.reload();
+          detailQuery.reload();
+        }}
+      />
+    );
+  }
   if (!roomQuery.data || fundsQuery.loading || (activeId && !fund)) {
     return <LoadingState variant="page" />;
   }

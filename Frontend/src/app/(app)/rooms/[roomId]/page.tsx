@@ -20,7 +20,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { JoinRequestsCard } from "@/components/rooms/JoinRequestsCard";
 import { InviteShare } from "@/components/rooms/InviteShare";
-import { AddExpenseForm } from "@/components/rooms/AddExpenseForm";
+import { RoomFullNote } from "@/components/rooms/RoomFullNote";
+import { AddExpenseForm } from "@/components/lazyForms";
 import { SettleUpCard } from "@/components/rooms/SettleUpCard";
 import { CategoriesCard } from "@/components/rooms/CategoriesCard";
 import { Badge } from "@/components/ui/Badge";
@@ -28,6 +29,7 @@ import { RoomFundCard } from "@/components/funds/RoomFundCard";
 import { Pagination } from "@/components/ui/Pagination";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PageError } from "@/components/ui/PageError";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -117,7 +119,21 @@ export default function RoomPage() {
   }
 
   const error = roomQuery.error ?? membersQuery.error ?? expensesQuery.error ?? balancesQuery.error;
-  if (error) return <p className="text-danger">{error}</p>;
+  if (error) {
+    return (
+      <PageError
+        error={error}
+        notFound={roomQuery.notFound}
+        what="room"
+        onRetry={() => {
+          roomQuery.reload();
+          membersQuery.reload();
+          expensesQuery.reload();
+          balancesQuery.reload();
+        }}
+      />
+    );
+  }
   if (!room || !expensesQuery.data || membersQuery.loading || balancesQuery.loading) {
     return <LoadingState variant="page" />;
   }
@@ -250,7 +266,15 @@ export default function RoomPage() {
           <Card className="rounded-3xl p-6">
             <h2 className="font-semibold flex items-center gap-2 mb-4">
               <UsersIcon className="h-4 w-4" /> Members
+              <span className="ml-auto text-xs font-normal text-foreground/50" title={`The ${room.plan} plan allows ${room.max_members} people per room`}>
+                {room.member_count} / {room.max_members}
+              </span>
             </h2>
+            {isAdmin && (
+              <div className="mb-4">
+                <RoomFullNote room={room} />
+              </div>
+            )}
             <ul className="flex flex-col gap-3">
               {members.map((m) => (
                 <li key={m.user_id} className="flex items-center gap-3">
@@ -289,6 +313,9 @@ export default function RoomPage() {
       </Modal>
       {room.invite_code && (
         <Modal open={modal === "invite"} onClose={() => setModal(null)} title={`Invite to ${room.name}`}>
+          <div className="mb-4">
+            <RoomFullNote room={room} />
+          </div>
           <InviteShare
             roomName={room.name}
             inviteCode={room.invite_code}
