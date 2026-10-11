@@ -77,10 +77,13 @@ export async function seedSuperAdmin(
 
       const passwordChanged = !user.password_hash || !(await bcrypt.compare(password, user.password_hash));
       const { rowCount } = await client.query(
+        // onboarding_completed: an existing account made super admin skips
+        // onboarding too (it was created as a member, e.g. via Google).
         `UPDATE users SET role = 'super_admin', email_verified = true, suspended_at = NULL,
-                password_hash = COALESCE($2, password_hash)
+                onboarding_completed = true, password_hash = COALESCE($2, password_hash)
          WHERE id = $1
-           AND (role <> 'super_admin' OR NOT email_verified OR suspended_at IS NOT NULL OR $2::text IS NOT NULL)`,
+           AND (role <> 'super_admin' OR NOT email_verified OR suspended_at IS NOT NULL
+                OR NOT onboarding_completed OR $2::text IS NOT NULL)`,
         [user.id, passwordChanged ? await bcrypt.hash(password, BCRYPT_COST) : null]
       );
       if (passwordChanged) {

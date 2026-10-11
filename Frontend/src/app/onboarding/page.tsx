@@ -49,7 +49,8 @@ export default function OnboardingPage() {
   const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
-    if (user?.onboardingCompleted) router.replace("/dashboard");
+    if (user?.role === "super_admin") router.replace("/admin");
+    else if (user?.onboardingCompleted) router.replace("/dashboard");
   }, [user, router]);
 
   // Saved now (without completing onboarding) because creating a room in the

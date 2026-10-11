@@ -143,7 +143,11 @@ describe("super admin seed (SUPER_ADMIN_* env)", () => {
 
   it("changing the email makes the new one super admin and demotes the old one", async () => {
     const next = await createUser();
+    // An existing member account that never finished onboarding (e.g. signed up with Google).
+    await adminPool.query("UPDATE users SET onboarding_completed = false WHERE id = $1", [next.id]);
     expect(await seedSuperAdmin({ email: next.email, password: "next-password-789", name: "Next Admin" })).toBe("updated");
+    const onboarded = await adminPool.query("SELECT onboarding_completed FROM users WHERE id = $1", [next.id]);
+    expect(onboarded.rows[0].onboarding_completed).toBe(true); // the super admin skips onboarding
     const roles = await adminPool.query<{ email: string; role: string }>(
       "SELECT email, role FROM users WHERE email = ANY($1)",
       [[email, next.email]]

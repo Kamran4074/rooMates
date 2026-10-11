@@ -37,7 +37,8 @@ export function useRequireAuth({ requireOnboarding = true } = {}) {
   const hydrated = useHydrated();
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
-  const needsOnboarding = requireOnboarding && !!user && !user.onboardingCompleted;
+  // The super admin runs the platform; onboarding (phone, first room) is for members.
+  const needsOnboarding = requireOnboarding && !!user && !user.onboardingCompleted && user.role !== "super_admin";
 
   useEffect(() => {
     if (!hydrated) return;
