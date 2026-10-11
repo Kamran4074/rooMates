@@ -11,6 +11,7 @@ import {
   deleteEntry,
   disputeEntry,
   listMyPendingApprovals,
+  listMyFundStatus,
   getFund,
   listFunds,
   previewClose,
@@ -79,4 +80,8 @@ export async function handlePreviewClose(req: Request, res: Response) {
 export async function handleClose(req: Request, res: Response) {
   const { roomId, fundId } = ids(req);
   sendSuccess(res, await closeFund(req.auth!.sub, roomId, fundId), { message: "Fund closed" });
+}
+
+export async function handleMyFundStatus(req: Request, res: Response) {
+  sendSuccess(res, await listMyFundStatus(req.auth!.sub));
 }

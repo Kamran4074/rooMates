@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import { PoolClient } from "pg";
 import { withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
@@ -11,7 +10,6 @@ import { getCategory } from "../categories/categories.service";
 
 export async function createExpense(userId: string, roomId: string, input: CreateExpenseInput) {
   const amountPaise = toPaise(input.amount);
-  const expenseId = crypto.randomUUID();
 
   return withUserContext(userId, async (client) => {
     // RLS hides rooms the caller isn't in, so this 404s for someone else's room.
@@ -56,17 +54,20 @@ export async function createExpense(userId: string, roomId: string, input: Creat
       }
     }
 
-    await client.query(
-      `INSERT INTO expenses (id, room_id, paid_by, description, amount_paise, expense_date, created_by, category_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [expenseId, roomId, paidBy, input.description, amountPaise, expenseDate, userId, category?.id ?? null]
+    // The id comes from the database (uuidv7: time-ordered, index-friendly).
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO expenses (room_id, paid_by, description, amount_paise, expense_date, created_by, category_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [roomId, paidBy, input.description, amountPaise, expenseDate, userId, category?.id ?? null]
     );
+    const expenseId = inserted.rows[0].id;
 
     // One round trip for all shares instead of one INSERT per member.
     await client.query(
-      `INSERT INTO expense_splits (expense_id, user_id, share_paise)
-       SELECT $1, s.user_id, s.share_paise FROM unnest($2::uuid[], $3::bigint[]) AS s(user_id, share_paise)`,
-      [expenseId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
+      // room_id must match the expense's room - a composite foreign key checks it.
+      `INSERT INTO expense_splits (expense_id, room_id, user_id, share_paise)
+       SELECT $1, $2, s.user_id, s.share_paise FROM unnest($3::uuid[], $4::bigint[]) AS s(user_id, share_paise)`,
+      [expenseId, roomId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
     );
 
     return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, categoryId: category?.id ?? null, splits };
@@ -231,5 +232,34 @@ export async function getMonthlySummary(userId: string, roomId?: string) {
         netPaise: iPaid - myShare,
       };
     });
+  });
+}
+
+// One month, split by bill section - for the dashboard's breakdown chart.
+// Expenses without a section come back with category null ("Other").
+export async function getCategoryBreakdown(userId: string, { month, roomId }: MonthExpensesQuery) {
+  return withUserContext(userId, async (client) => {
+    const { rows } = await client.query<{ category: string | null; total_paise: string; my_share_paise: string; expense_count: number }>(
+      `SELECT c.name AS category,
+              SUM(e.amount_paise) AS total_paise,
+              SUM(COALESCE(es.share_paise, 0)) AS my_share_paise,
+              COUNT(*)::int AS expense_count
+       FROM expenses e
+       LEFT JOIN expense_categories c ON c.id = e.category_id
+       LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.user_id = $1
+       WHERE e.deleted_at IS NULL
+         AND e.expense_date >= $2::date
+         AND e.expense_date <  ($2::date + interval '1 month')
+         AND ($3::uuid IS NULL OR e.room_id = $3)
+       GROUP BY c.name
+       ORDER BY SUM(e.amount_paise) DESC`,
+      [userId, `${month}-01`, roomId ?? null]
+    );
+    return rows.map((r) => ({
+      category: r.category,
+      totalPaise: Number(r.total_paise),
+      mySharePaise: Number(r.my_share_paise),
+      expenseCount: r.expense_count,
+    }));
   });
 }

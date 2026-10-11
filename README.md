@@ -44,7 +44,7 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - Record who actually paid (you or any member) and the day it was spent, so a bill added late still lands in the right month
 - **Bill sections:** the room admin keeps sections like Rent, Groceries, WiFi, Gas, each with the people who share it. An expense filed under a section is split equally between them (e.g. whoever's away this month isn't charged for groceries); it can be changed for a single expense. New roommates join every section automatically
 - **Notifications:** one feed of everything in your rooms - who added, deleted, paid, approved or disputed what, who joined or left - with payment requests at the top and an unread badge. The feed is written by database triggers and nobody can edit it, so it's the record
-- **Live updates:** pages refresh by themselves when someone else changes something in your room (Server-Sent Events fed by Postgres LISTEN/NOTIFY)
+- **Live updates:** pages refresh by themselves and a toast pops up when someone else changes something in your room (WebSocket, fed by Postgres LISTEN/NOTIFY)
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
 - **Settle up for real:** "Mark as paid" on a suggested payment (or record any payment) and the balances update. One of the two people or the room admin records it
 - Delete a wrong expense or payment (whoever added it, or the room admin). It's a soft delete: the record stays with who deleted it and when
@@ -101,7 +101,7 @@ Everything the project uses, and what for.
 | React | 19 | UI |
 | TypeScript | 5 | Types end to end |
 | Tailwind CSS (`@tailwindcss/postcss`) | 4 | Styling, dark theme, responsive layout |
-| Zustand | 5 | Shared client state: auth session, rooms, approvals, unread notifications, live-update counters |
+| Zustand | 5 | Shared client state: auth session, rooms, approvals, unread notifications, live-update counters, toasts |
 | `@react-oauth/google` | 0.13 | "Continue with Google" popup (access-token flow) |
 | lucide-react | 1 | Icons |
 | ESLint + `eslint-config-next` | 9 | Linting (incl. React hooks / React Compiler rules) |
@@ -124,6 +124,7 @@ Everything the project uses, and what for.
 | cors | 2 | Origin allow-list; exposes `Content-Disposition` for CSV downloads |
 | express-rate-limit / express-slow-down | 8 / 3 | Per-IP and per-account limits, login slow-down |
 | Winston + Morgan | 3 / 1 | Structured logs and request logs |
+| ws | 8 | WebSocket server for live updates (`/api/ws`, same port as the API) |
 | dotenv | 18 | Local `.env` loading (validated by Zod at startup) |
 | tsx | 4 | Running TypeScript in development (`npm run dev`) |
 
@@ -131,7 +132,7 @@ Everything the project uses, and what for.
 
 | Feature | Used for |
 |---|---|
-| PostgreSQL 18 (Neon, AWS Singapore; CI runs 17) | The only data store |
+| PostgreSQL 18 (Neon, AWS Singapore; CI runs 18 too) | The only data store |
 | Row-Level Security policies + `SECURITY DEFINER` helper functions | Tenant isolation: a member can only ever read their own rooms' data, enforced by the database |
 | Two roles (`app_user` least-privilege, owner) | RLS for every request; the owner role only for migrations and the super-admin module |
 | Views (`room_ledger`, `security_invoker`) | One source of truth for every balance (expenses, splits, payments, soft deletes) |
@@ -156,9 +157,9 @@ Everything the project uses, and what for.
 
 | Tool | Used for |
 |---|---|
-| Jest 30 + `@swc/jest` | 33 unit tests (settlement algorithm, splits, fund maths, geo, schemas) and 74 API integration tests against a real PostgreSQL |
+| Jest 30 + `@swc/jest` | 33 unit tests (settlement algorithm, splits, fund maths, geo, schemas) and 79 API integration tests against a real PostgreSQL |
 | GitHub Actions | Typecheck, lint, unit + API tests on a fresh Postgres service container (all migrations from zero), production builds |
-| Docker (optional) | A throwaway local database - `docker run --rm -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=neondb -p 55432:5432 postgres:17-alpine` - to run migrations and API tests without touching the real one |
+| Docker (optional) | A throwaway local database - `docker run --rm -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=neondb -p 55432:5432 postgres:18-alpine` - to run migrations and API tests without touching the real one |
 | Swagger UI | Trying the API by hand at `/api-docs` |
 
 ### Patterns worth knowing
@@ -169,7 +170,7 @@ Everything the project uses, and what for.
 - **Soft deletes** for money records (`deleted_at`, `deleted_by`); accounts are anonymised, not deleted
 - **Two-sided fund payments:** a payment counts only when the payer and the collector both agree
 - **Audit trails written by the database** (activity log via triggers; admin actions in the same transaction)
-- **Live updates over Server-Sent Events** (one-way push is all that's needed, so no WebSocket server)
+- **Live updates over WebSocket**, fed by Postgres LISTEN/NOTIFY - no Redis or separate realtime server
 
 ## Architecture
 
@@ -214,7 +215,6 @@ Backend/
       contact/                  public contact form
   migrations/                   SQL schema, RLS policies, SECURITY DEFINER functions
   tests/                        API integration tests (real app + database)
-  scripts/make-admin.ts         grant/revoke super admin
 ```
 
 ### Every response has one shape
@@ -317,7 +317,7 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 - The activity log is written only by database triggers; the app's role can't insert, edit or delete it
 - Disputed fund payments can't be deleted (RLS), so the record of a disagreement stays
 - CSV exports neutralise spreadsheet formulas and are themselves audit-logged
-- Live-update streams: authenticated, at most 5 per user, closed on shutdown; events carry only a room id and event type, never data
+- Live updates (WebSocket): origin must be the app's own site, the first message must be a valid access token (5 s), at most 5 sockets per user, 4 KB message cap, ping/pong drops dead sockets, closed on shutdown; an event goes only to that room's members
 
 ## API
 
@@ -337,7 +337,7 @@ Main groups:
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
 | Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
 | Bill sections | `GET/POST /api/rooms/:id/categories`, `PATCH/DELETE /api/rooms/:id/categories/:categoryId` (room admin) |
-| Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/seen`, `GET /api/notifications/stream` (live, SSE) |
+| Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/seen`; live updates: WebSocket `/api/ws` |
 | Fund approvals | `GET /api/fund-approvals`, `POST /api/rooms/:id/funds/:fundId/entries/:entryId/confirm`, `.../dispute` |
 | Settle up | `GET/POST /api/rooms/:id/settlements`, `DELETE /api/rooms/:id/settlements/:settlementId` |
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
@@ -362,10 +362,8 @@ npm install
 cp .env.example .env       # NEXT_PUBLIC_API_URL, NEXT_PUBLIC_SITE_URL, NEXT_PUBLIC_GOOGLE_CLIENT_ID
 npm run dev                # http://localhost:3000
 
-# Make yourself a super admin (after signing up)
-cd Backend
-npm run make-admin -- you@example.com
-# ...or set SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in .env: applied on every start
+# Super admin: set SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in Backend/.env (Render: Environment).
+# Applied on every start; any other super admin is demoted.
 ```
 
 ### Backend environment variables
@@ -406,7 +404,6 @@ npm run make-admin -- you@example.com
 | `npm run test:api` | API integration tests against the database in `.env` |
 | `npm run migrate:create -- <name>` | New migration file |
 | `npm run migrate:up` / `npm run migrate:down` | Apply / undo migrations manually |
-| `npm run make-admin -- <email> [--remove]` | Grant or revoke super admin |
 
 | Frontend (`cd Frontend`) | |
 |---|---|
@@ -424,18 +421,18 @@ npm test            # unit tests: settlement algorithm, splits, fund maths, geo,
 npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
 ```
 
-**33 unit tests and 74 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), the activity log (including that the app can't write to it) and the live event stream, listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**33 unit tests and 79 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), the activity log (including that the app can't write to it) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 
-- **Backend:** typecheck, unit tests, then a fresh Postgres 17 service container with every migration applied from zero, then the API tests and a production build. It needs no real secrets: CI uses a throwaway database and a dummy JWT secret. Because `app_user` there is a normal (non-superuser) role, the tests also prove RLS works.
+- **Backend:** typecheck, unit tests, then a fresh Postgres 18 service container (same major version as Neon) with every migration applied from zero, then the API tests and a production build. It needs no real secrets: CI uses a throwaway database and a dummy JWT secret. Because `app_user` there is a normal (non-superuser) role, the tests also prove RLS works.
 - **Frontend:** `next typegen` (route types), typecheck, ESLint, `next build`.
 
 ## Deployment
 
 The app is designed for free hosting: **Vercel** (frontend) + **Render** (backend) + **Neon** (database) + **Cloudinary** (photos).
 
-1. **Render** via the Blueprint in [render.yaml](render.yaml) (Dashboard → New → Blueprint → this repo). It defines the `roomates-api` web service in Singapore (same region as the database), the build/start commands, the `/api/health` check, and auto-deploy only after CI passes. Render generates `JWT_SECRET` itself. Keys marked `sync: false` (database URLs, Brevo, Google client ID, Cloudinary) are asked for once at creation and are never committed. Migrations run automatically at startup (or set `MIGRATE_ON_START=false` and run `npm run migrate:up` as a pre-deploy step).
+1. **Render** via the Blueprint in [render.yaml](render.yaml) (Dashboard → New → Blueprint → this repo). It defines the `roomates-api` web service in Singapore (same region as the database), the build/start commands, the `/api/health` check, and auto-deploy only after CI passes (Settings → Auto-Deploy → "After CI Checks Pass"). Render generates `JWT_SECRET` itself. Keys marked `sync: false` (database URLs, Brevo, Google client ID, Cloudinary) are asked for once at creation and are never committed. Migrations run automatically at startup (or set `MIGRATE_ON_START=false` and run `npm run migrate:up` as a pre-deploy step).
 2. **Vercel** (root `Frontend`): set `NEXT_PUBLIC_API_URL` (the Render URL), `NEXT_PUBLIC_SITE_URL` (the Vercel URL), `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 3. **Google Cloud Console:** add the Vercel URL to *Authorized JavaScript origins* and publish the OAuth consent screen.
 
@@ -447,7 +444,7 @@ On a VPS instead: run the backend with PM2 (`pm2 start dist/index.js --name room
 |---|---|
 | Google sign-in shows `origin_mismatch` | Open the app at `http://localhost:3000`. Google doesn't accept IP addresses as origins; in production add your domain under *Authorized JavaScript origins* |
 | CORS error in the browser | Add the page's origin to `CORS_ORIGIN` and restart the backend |
-| Admin menu missing after `make-admin` | Sign out and back in |
+| Admin menu missing after changing `SUPER_ADMIN_EMAIL` | Redeploy (the seed runs on start), then sign out and back in |
 | Photo upload says it isn't set up | Add the three `CLOUDINARY_*` variables and restart the backend |
 | Dev server returns 500 with `Cannot find module '@vercel/turbopack/postcss'` | Delete `Frontend/.next` and start `npm run dev` again |
 

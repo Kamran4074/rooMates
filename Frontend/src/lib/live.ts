@@ -1,23 +1,32 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { apiAuthStream } from "./api";
+import { liveSocketUrl, refreshSession } from "./api";
+import { describeActivity } from "./activityText";
+import type { ActivityEvent } from "./types";
+import { useAuthStore } from "@/store/authStore";
 import { useLiveStore } from "@/store/liveStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
 import { useRoomsStore } from "@/store/roomsStore";
+import { useToastStore } from "@/store/toastStore";
 
-// Live updates from the API's event stream (Server-Sent Events).
-// fetch() instead of EventSource so the Authorization header can be sent.
-// Each "activity" event means "something changed in room X": badges and the
-// rooms list reload, and pages watching that room refetch (useLiveRefresh).
-//
-// A hidden tab lets go of the stream after a minute: an open connection keeps
-// a free-tier server (and its database) awake around the clock. Coming back
-// reconnects and refetches, since events may have been missed meanwhile.
+// Live updates over WebSocket (the API's /api/ws, see Backend config/realtime.ts).
+//  - The first message is the access token (browsers can't send headers on a
+//    WebSocket, and a token in the URL would end up in logs).
+//  - Each "activity" message is one feed event: badges and the rooms list
+//    reload, pages watching that room refetch (useLiveRefresh), and if someone
+//    else did it, a toast says what happened.
+//  - Dropped connections reconnect with backoff; an expired token is refreshed
+//    first (close code 4001).
+//  - A tab hidden for a minute lets go of the socket: an open connection keeps
+//    a free-tier server (and its database) awake around the clock. Coming back
+//    reconnects and refetches, since events may have been missed meanwhile.
 
 const MAX_BACKOFF_MS = 30_000;
 const HIDDEN_GRACE_MS = 60_000;
+const CLOSE_AUTH_FAILED = 4001;
+const CLOSE_TOO_MANY = 4002;
 
 function reloadShared() {
   useApprovalsStore.getState().load();
@@ -25,75 +34,75 @@ function reloadShared() {
   useRoomsStore.getState().load(); // dashboard / sidebar balances
 }
 
-// Splits the stream into events ("event: x\ndata: {...}\n\n"); comment lines (": ping") are ignored.
-function parse(block: string): { event: string; data: string } | null {
-  let event = "message";
-  let data = "";
-  for (const line of block.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) data += line.slice(5).trim();
+function onActivity(event: ActivityEvent) {
+  useLiveStore.getState().bump(event.room_id);
+  reloadShared();
+  const myId = useAuthStore.getState().user?.id;
+  if (event.actor_id !== myId) {
+    const href = event.data.fund_id ? `/rooms/${event.room_id}/fund` : `/rooms/${event.room_id}`;
+    useToastStore.getState().show(`${describeActivity(event, myId)} · ${event.room_name}`, href);
   }
-  return data ? { event, data } : null;
 }
 
 export function useLiveConnection(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
-    let controller: AbortController | null = null;
+    let socket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let hiddenTimer: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
     let connectedBefore = false;
+    let stopped = false;
 
-    async function connect() {
-      const mine = new AbortController();
-      controller = mine;
-      try {
-        const res = await apiAuthStream("/api/notifications/stream", mine.signal);
-        if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let cut: number;
-          while ((cut = buffer.indexOf("\n\n")) !== -1) {
-            const msg = parse(buffer.slice(0, cut));
-            buffer = buffer.slice(cut + 2);
-            if (msg?.event === "ready") {
-              attempt = 0;
-              // Back after a gap: catch up on whatever happened meanwhile.
-              if (connectedBefore) {
-                useLiveStore.getState().bumpAll();
-                reloadShared();
-              }
-              connectedBefore = true;
-            } else if (msg?.event === "activity") {
-              useLiveStore.getState().bump((JSON.parse(msg.data) as { room_id: string }).room_id);
-              reloadShared();
-            }
+    function scheduleReconnect(delay = Math.min(MAX_BACKOFF_MS, 1_000 * 2 ** attempt++)) {
+      clearTimeout(retry);
+      if (!stopped) retry = setTimeout(connect, delay);
+    }
+
+    function connect() {
+      const token = useAuthStore.getState().accessToken;
+      if (!token || stopped) return;
+      const ws = new WebSocket(liveSocketUrl());
+      socket = ws;
+      ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token }));
+      ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data as string) as { type: string; event?: ActivityEvent };
+        if (data.type === "ready") {
+          attempt = 0;
+          // Back after a gap: catch up on whatever happened meanwhile.
+          if (connectedBefore) {
+            useLiveStore.getState().bumpAll();
+            reloadShared();
           }
+          connectedBefore = true;
+        } else if (data.type === "activity" && data.event) {
+          onActivity(data.event);
         }
-      } catch {
-        // Aborted (unmount / hidden tab) or the connection failed: see below.
-      }
-      if (mine.signal.aborted || controller !== mine) return;
-      retry = setTimeout(connect, Math.min(MAX_BACKOFF_MS, 1_000 * 2 ** attempt++));
+      };
+      ws.onclose = async (e) => {
+        if (socket !== ws || stopped) return; // replaced or shut down on purpose
+        socket = null;
+        if (e.code === CLOSE_AUTH_FAILED) {
+          // Usually an expired access token: refresh, then try again right away.
+          if (await refreshSession()) scheduleReconnect(0);
+          return;
+        }
+        scheduleReconnect(e.code === CLOSE_TOO_MANY ? MAX_BACKOFF_MS : undefined);
+      };
     }
 
     function disconnect() {
-      controller?.abort();
-      controller = null;
       clearTimeout(retry);
+      const ws = socket;
+      socket = null;
+      ws?.close();
     }
 
     function onVisibility() {
       clearTimeout(hiddenTimer);
       if (document.visibilityState === "hidden") {
         hiddenTimer = setTimeout(disconnect, HIDDEN_GRACE_MS);
-      } else if (!controller) {
+      } else if (!socket) {
         attempt = 0;
         connect();
       }
@@ -102,6 +111,7 @@ export function useLiveConnection(enabled: boolean) {
     connect();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      stopped = true;
       document.removeEventListener("visibilitychange", onVisibility);
       clearTimeout(hiddenTimer);
       disconnect();

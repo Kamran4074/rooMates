@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../middlewares/authenticate";
-import { handleListMyExpenses, handleMonthlySummary } from "./expenses.controller";
+import { handleCategoryBreakdown, handleListMyExpenses, handleMonthlySummary } from "./expenses.controller";
 
 // Cross-room views of the caller's expenses (the /api/rooms/:roomId routes
 // are per room).
@@ -10,5 +10,6 @@ router.use(authenticate);
 
 router.get("/", handleListMyExpenses);
 router.get("/monthly-summary", handleMonthlySummary);
+router.get("/by-category", handleCategoryBreakdown);
 
 export default router;

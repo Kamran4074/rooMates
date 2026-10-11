@@ -13,7 +13,7 @@
  *    tables themselves, so it can't be skipped or faked by the app, and
  *    app_user has no INSERT/UPDATE/DELETE on it: the log is the proof.
  *    users.notifications_seen_at drives the unread count. Each new row is
- *    also announced with pg_notify('room_activity') for live updates.
+ *    also announced with pg_notify('room_activity') for live updates (WebSocket).
  *
  * @param pgm {import('node-pg-migrate').MigrationBuilder}
  */
@@ -104,15 +104,19 @@ export const up = (pgm) => {
   pgm.sql(`
     CREATE FUNCTION log_activity(p_room uuid, p_type text, p_actor uuid, p_subject uuid, p_amount bigint, p_data jsonb)
     RETURNS void AS $$
+    DECLARE
+      v_id uuid;
     BEGIN
       -- During a cascade (room or account being deleted) the room is already
       -- gone; there is nothing left to log into.
       IF EXISTS (SELECT 1 FROM rooms WHERE id = p_room) THEN
         INSERT INTO activity_log (room_id, type, actor_id, subject_id, amount_paise, data)
-          VALUES (p_room, p_type, p_actor, p_subject, p_amount, COALESCE(p_data, '{}'));
-        -- Live updates: the API listens on this channel and pushes it to the
-        -- room's members (config/realtime.ts). Delivered only on COMMIT.
-        PERFORM pg_notify('room_activity', json_build_object('room_id', p_room, 'type', p_type)::text);
+          VALUES (p_room, p_type, p_actor, p_subject, p_amount, COALESCE(p_data, '{}'))
+          RETURNING id INTO v_id;
+        -- Live updates: the API listens on this channel and pushes the event
+        -- to the room's members over WebSocket (config/realtime.ts).
+        -- Delivered only on COMMIT.
+        PERFORM pg_notify('room_activity', json_build_object('id', v_id, 'room_id', p_room, 'type', p_type)::text);
       END IF;
     END;
     $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

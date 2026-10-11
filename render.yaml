@@ -18,7 +18,8 @@ services:
     # Pending migrations run inside startup (src/config/migrate.ts).
     startCommand: npm start
     healthCheckPath: /api/health
-    # Deploy a push to main only after GitHub CI passes.
+    # Deploy a push to main only after GitHub CI passes (Render dashboard:
+    # Settings -> Auto-Deploy -> "After CI Checks Pass").
     autoDeployTrigger: checksPass
     envVars:
       - key: NODE_VERSION
@@ -62,8 +63,8 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
-      # Break-glass super admin, applied on every start (src/config/superAdminSeed.ts).
-      # Forgot the password? Change SUPER_ADMIN_PASSWORD here and redeploy.
+      # The super admin, applied on every start (src/config/superAdminSeed.ts).
+      # Forgot the password or want another admin email? Change these and redeploy.
       - key: SUPER_ADMIN_EMAIL
         sync: false
       - key: SUPER_ADMIN_PASSWORD

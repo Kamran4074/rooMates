@@ -19,7 +19,7 @@ async function start() {
     }
   }
 
-  // Never throws: a bad SUPER_ADMIN_* config is logged, not fatal.
+  // Applies SUPER_ADMIN_* from the environment. Never throws: a bad config is logged, not fatal.
   await seedSuperAdmin();
 
   const server = app.listen(env.PORT, () => {
@@ -28,7 +28,7 @@ async function start() {
   // In the background: requests still work if this is slow or fails.
   warmUpPool().catch((err) => logger.warn("Couldn't pre-open DB connections", { error: (err as Error).message }));
   scheduleHousekeeping();
-  startRealtime().catch((err) => logger.warn("Live updates didn't start", { error: (err as Error).message }));
+  startRealtime(server).catch((err) => logger.warn("Live updates didn't start", { error: (err as Error).message }));
 
   // Hosts like Render/Railway send SIGTERM on every deploy. Stop accepting new
   // connections, let in-flight requests finish, then close the DB pool - instead
@@ -36,7 +36,7 @@ async function start() {
   function shutdown(signal: string) {
     logger.info(`${signal} received, shutting down`);
     // Live-update streams never end on their own; close them first.
-    stopRealtime().catch(() => undefined);
+    stopRealtime(server).catch(() => undefined);
     server.close(() => {
       Promise.all([pool.end(), adminPool.end()]).finally(() => process.exit(0));
     });

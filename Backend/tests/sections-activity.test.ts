@@ -1,6 +1,8 @@
 import { withUserContext } from "../src/config/db";
-import { startRealtime, stopRealtime } from "../src/config/realtime";
-import { api, baseUrlOf, cleanup, createUser, startServer, TestUser } from "./helpers";
+import { WebSocket } from "ws";
+import { env } from "../src/config/env";
+import { CLOSE_AUTH_FAILED, startRealtime, stopRealtime } from "../src/config/realtime";
+import { api, baseUrlOf, cleanup, createUser, httpServer, startServer, TestUser } from "./helpers";
 
 // Bill sections (who shares which bill) and the activity log / notifications.
 
@@ -113,37 +115,68 @@ describe("activity log", () => {
     expect(disputed.data.note).toBe("Paid 1000 only");
   });
 
-  it("is pushed live to the room's members over the event stream", async () => {
-    await startRealtime();
-    try {
-      const controller = new AbortController();
-      const res = await fetch(`${baseUrlOf()}/api/notifications/stream`, {
-        headers: { Authorization: `Bearer ${bhavya.token}` },
-        signal: controller.signal,
+  describe("live updates over WebSocket", () => {
+    const origin = env.CORS_ORIGIN[0];
+    const wsUrl = () => `${baseUrlOf().replace("http", "ws")}/api/ws`;
+    beforeAll(() => startRealtime(httpServer()));
+    afterAll(() => stopRealtime(httpServer()));
+
+    // Opens a socket, signs in with `token`, and collects every message.
+    async function connect(token: string) {
+      const ws = new WebSocket(wsUrl(), { headers: { Origin: origin } });
+      const messages: { type: string; event?: Record<string, unknown> }[] = [];
+      ws.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+      await new Promise((resolve, reject) => {
+        ws.once("open", resolve);
+        ws.once("error", reject);
       });
-      expect(res.headers.get("content-type")).toContain("text/event-stream");
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let text = "";
-      const read = async (until: (t: string) => boolean) => {
-        const deadline = Date.now() + 8000;
-        while (!until(text) && Date.now() < deadline) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          text += decoder.decode(value);
-        }
-      };
-      await read((t) => t.includes("event: ready"));
-      await new Promise((r) => setTimeout(r, 300)); // LISTEN is set up
-      await api(admin, "POST", `${rooms()}/expenses`, { description: "Milk", amount: 60, splitType: "equal" });
-      await read((t) => t.includes("event: activity"));
-      expect(text).toContain("event: activity");
-      expect(text).toContain(`"room_id":"${roomId}"`);
-      expect(text).toContain(`"type":"expense_added"`);
-      controller.abort();
-    } finally {
-      await stopRealtime();
+      ws.send(JSON.stringify({ type: "auth", token }));
+      await waitFor(() => messages.some((m) => m.type === "ready"));
+      return { ws, messages };
     }
+    async function waitFor(check: () => boolean, ms = 8000) {
+      const deadline = Date.now() + ms;
+      while (!check()) {
+        if (Date.now() > deadline) throw new Error("timed out");
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+
+    it("pushes each new event, with names, to the room's members only", async () => {
+      const member = await connect(bhavya.token);
+      const outsider = await connect((await createUser()).token);
+      await new Promise((r) => setTimeout(r, 300)); // LISTEN is set up
+
+      await api(admin, "POST", `${rooms()}/expenses`, { description: "Milk", amount: 60, splitType: "equal" });
+      await waitFor(() => member.messages.some((m) => m.type === "activity"));
+      const { event } = member.messages.find((m) => m.type === "activity")!;
+      expect(event).toEqual(
+        expect.objectContaining({ type: "expense_added", room_id: roomId, actor_id: admin.id, amount_paise: 6000, unread: true })
+      );
+      expect((event!.data as { description: string }).description).toBe("Milk");
+
+      await new Promise((r) => setTimeout(r, 300));
+      expect(outsider.messages.filter((m) => m.type === "activity")).toEqual([]);
+      member.ws.close();
+      outsider.ws.close();
+    });
+
+    it("closes the socket when the first message isn't a valid token", async () => {
+      const ws = new WebSocket(wsUrl(), { headers: { Origin: origin } });
+      await new Promise((r) => ws.once("open", r));
+      const closed = new Promise<number>((r) => ws.once("close", (code) => r(code)));
+      ws.send(JSON.stringify({ type: "auth", token: "not-a-jwt" }));
+      expect(await closed).toBe(CLOSE_AUTH_FAILED);
+    });
+
+    it("refuses connections from another website", async () => {
+      const ws = new WebSocket(wsUrl(), { headers: { Origin: "https://evil.example" } });
+      const status = await new Promise<number>((resolve) => {
+        ws.once("unexpected-response", (_req, res) => resolve(res.statusCode ?? 0));
+        ws.once("open", () => resolve(101));
+      });
+      expect(status).toBe(403);
+    });
   });
 
   it("can't be written or edited by the app, and outsiders can't read it", async () => {

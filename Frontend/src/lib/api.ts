@@ -155,7 +155,9 @@ export async function apiAuthGetPaged<T>(path: string): Promise<{ data: T; pagin
   return { data: body.data, pagination: body.pagination };
 }
 
-// A long-lived authenticated GET (the live-updates event stream). Goes through
-// the same refresh-and-retry as every other call when the access token expired.
-export const apiAuthStream = (path: string, signal: AbortSignal) =>
-  authFetch(path, { method: "GET", signal, headers: { Accept: "text/event-stream" } });
+// Live updates: ws:// or wss:// on the API's own host (see lib/live.ts).
+export const liveSocketUrl = () => `${API_URL.replace(/^http/, "ws")}/api/ws`;
+
+// The WebSocket refused our token (expired): get a fresh one, the same way a
+// 401 on a normal call does. False if the session is over.
+export const refreshSession = () => tryRefreshAccessToken();

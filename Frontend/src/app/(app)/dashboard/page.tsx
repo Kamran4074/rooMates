@@ -12,6 +12,7 @@ import { useRoomsStore } from "@/store/roomsStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FundApprovalsCard } from "@/components/funds/FundApprovalsCard";
+import { FundStatusCard } from "@/components/funds/FundStatusCard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -51,6 +52,9 @@ export default function DashboardPage() {
       />
 
       <FundApprovalsCard />
+      <div className="mb-6">
+        <FundStatusCard />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
         <Card className="lg:col-span-2 p-6 rounded-3xl">

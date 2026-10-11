@@ -27,6 +27,7 @@ import { SpendFromFundForm } from "@/components/funds/SpendFromFundForm";
 import { FundMembersCard } from "@/components/funds/FundMembersCard";
 import { FundHistory } from "@/components/funds/FundHistory";
 import { FundSettlementCard } from "@/components/funds/FundSettlementCard";
+import { FundMyStatus } from "@/components/funds/FundMyStatus";
 import { CloseFundPreview } from "@/components/funds/CloseFundPreview";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/Skeleton";
@@ -167,6 +168,8 @@ export default function RoomFundPage() {
               </Select>
             </div>
           )}
+
+          <FundMyStatus fund={fund} myId={user?.id} onPay={() => setModal({ kind: "pay", memberId: user?.id })} />
 
           <Card className="rounded-3xl p-6 mb-6">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1">

@@ -67,8 +67,9 @@ export async function api(user: TestUser | null, method: string, path: string, b
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
 
-// The test server's address, for raw fetches (e.g. event streams).
+// The test server's address and the server itself (the WebSocket server attaches to it).
 export const baseUrlOf = () => baseUrl;
+export const httpServer = () => server;
 
 // For non-JSON responses (CSV downloads).
 export async function apiRaw(user: TestUser | null, path: string) {

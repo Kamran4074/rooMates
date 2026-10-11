@@ -248,7 +248,7 @@ export async function deleteUser(adminId: string, userId: string, reason: string
     if (!user) throw new AppError("User not found", 404);
     if (user.deleted_at) throw new AppError("This account is already deleted", 409);
     if (user.role === "super_admin") {
-      throw new AppError("Remove their super admin role first (npm run make-admin -- <email> --remove)", 403);
+      throw new AppError("The super admin is set by SUPER_ADMIN_EMAIL on the server; change it there first", 403);
     }
 
     const unsettled = await client.query<{ name: string }>(
@@ -278,7 +278,8 @@ export async function deleteUser(adminId: string, userId: string, reason: string
     for (const roomId of adminRooms) {
       await client.query(
         `UPDATE room_members SET role = 'admin'
-         WHERE id = (SELECT id FROM room_members WHERE room_id = $1 ORDER BY joined_at LIMIT 1)`,
+         WHERE room_id = $1
+           AND user_id = (SELECT user_id FROM room_members WHERE room_id = $1 ORDER BY joined_at LIMIT 1)`,
         [roomId]
       );
     }

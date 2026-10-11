@@ -930,6 +930,10 @@ route("get", "/api/notifications", "Notifications", "Activity feed of every room
 });
 route("get", "/api/notifications/unread-count", "Notifications", "How many events other people caused since I last opened the feed", {});
 route("post", "/api/notifications/seen", "Notifications", "Mark the feed as read", { status: 204 });
+route("get", "/api/funds/summary", "Funds", "Every open fund in my rooms: what I still owe (and to whom) and, if I run it, who still owes me and what waits for my confirmation", {});
+route("get", "/api/expenses/by-category", "Expenses", "One month's spending split by bill section (null = no section), with my share", {
+  query: monthExpensesQuerySchema,
+});
 route("get", "/api/fund-approvals", "Funds", "Payments the collector/admin recorded for me, waiting for my approval, across all my rooms", {});
 route("get", "/api/rooms/{roomId}/funds/{fundId}/close-preview", "Funds", "What closing would do: each person's equal share of the spending and who gets money back or owes", {
   params: fundParams,

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { withUserContext } from "../src/config/db";
+import { adminPool, withUserContext } from "../src/config/db";
 import { seedSuperAdmin } from "../src/config/superAdminSeed";
 import { api, cleanup, createUser, startServer, trackUserByEmail, TestUser } from "./helpers";
 
@@ -116,7 +116,7 @@ describe("removing a member uses the same ledger", () => {
   });
 });
 
-describe("super admin seed", () => {
+describe("super admin seed (SUPER_ADMIN_* env)", () => {
   const email = `seed-${crypto.randomUUID().slice(0, 8)}@example.com`;
   const login = (password: string) => api(null, "POST", "/api/auth/login", { email, password });
 
@@ -139,6 +139,16 @@ describe("super admin seed", () => {
     expect((await login("second-password-456")).status).toBe(200);
     const refresh = await api(null, "POST", "/api/auth/refresh", { refreshToken: session.body.data.refreshToken });
     expect(refresh.status).toBe(401);
+  });
+
+  it("changing the email makes the new one super admin and demotes the old one", async () => {
+    const next = await createUser();
+    expect(await seedSuperAdmin({ email: next.email, password: "next-password-789", name: "Next Admin" })).toBe("updated");
+    const roles = await adminPool.query<{ email: string; role: string }>(
+      "SELECT email, role FROM users WHERE email = ANY($1)",
+      [[email, next.email]]
+    );
+    expect(Object.fromEntries(roles.rows.map((r) => [r.email, r.role]))).toEqual({ [email]: "user", [next.email]: "super_admin" });
   });
 
   it("skips a short password or a half-filled config instead of failing", async () => {

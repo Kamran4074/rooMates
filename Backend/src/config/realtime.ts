@@ -1,68 +1,141 @@
-import { Response } from "express";
+import { IncomingMessage, Server } from "http";
+import { Duplex } from "stream";
 import { Client } from "pg";
+import { WebSocket, WebSocketServer } from "ws";
 import { env } from "./env";
 import { logger } from "./logger";
 import { adminPool } from "./db";
+import { verifyAccessToken } from "../middlewares/authenticate";
 
-// Live updates over Server-Sent Events (SSE).
-//
-// Why SSE and not WebSockets: updates only flow server -> browser ("something
-// changed in your room, refresh"). SSE is plain HTTP - no extra library, works
-// through Render/Vercel proxies, and the browser can send the usual
-// Authorization header with fetch().
+// Live updates over WebSocket, at ws(s)://<api>/api/ws on the API's own port.
 //
 // Where events come from: the activity_log trigger runs pg_notify('room_activity')
-// for every new event. One dedicated connection LISTENs, and each event goes
-// to the open streams of that room's members. NOTIFY is delivered only when the
-// writing transaction commits, so nobody hears about a change that rolled back.
-// With several API instances, each one listens and serves its own streams.
+// for every new event. One dedicated connection LISTENs; each event is looked
+// up once (with names) and sent to the open sockets of that room's members.
+// NOTIFY is delivered only on COMMIT, so nobody hears about a change that
+// rolled back. With several API instances, each listens and serves its own sockets.
+//
+// Security:
+//  - Origin must be one of CORS_ORIGIN, so another website can't open a socket
+//    as a logged-in user (cross-site WebSocket hijacking).
+//  - Browsers can't set an Authorization header on a WebSocket, and a token in
+//    the URL ends up in logs - so the first message must be
+//    {"type":"auth","token":"<access token>"} within AUTH_TIMEOUT_MS.
+//  - At most MAX_SOCKETS_PER_USER sockets per user; incoming messages are capped.
+//  - Ping every HEARTBEAT_MS; a socket that misses a pong is dropped.
 
+export const WS_PATH = "/api/ws";
 const CHANNEL = "room_activity";
-const HEARTBEAT_MS = 25_000; // under typical proxy idle timeouts
-export const MAX_STREAMS_PER_USER = 5;
+const AUTH_TIMEOUT_MS = 5_000;
+const HEARTBEAT_MS = 25_000;
+export const MAX_SOCKETS_PER_USER = 5;
 
-const streams = new Map<string, Set<Response>>(); // userId -> open streams
+// Close codes the browser client understands.
+export const CLOSE_AUTH_FAILED = 4001;
+export const CLOSE_TOO_MANY = 4002;
+
+interface LiveSocket extends WebSocket {
+  userId?: string;
+  alive?: boolean;
+}
+
+const sockets = new Map<string, Set<LiveSocket>>(); // userId -> open sockets
+let wss: WebSocketServer | null = null;
 let listener: Client | null = null;
 let heartbeat: NodeJS.Timeout | null = null;
 let stopping = false;
 
-function send(res: Response, event: string, data: unknown) {
-  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+function sendJson(ws: WebSocket, data: unknown) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
 }
 
-// Registers an open stream; returns false if the user already has too many.
-export function addStream(userId: string, res: Response): boolean {
-  const mine = streams.get(userId) ?? new Set<Response>();
-  if (mine.size >= MAX_STREAMS_PER_USER) return false;
-  mine.add(res);
-  streams.set(userId, mine);
-  res.on("close", () => {
-    mine.delete(res);
-    if (mine.size === 0) streams.delete(userId);
-  });
-  send(res, "ready", { at: new Date().toISOString() });
+function rejectUpgrade(socket: Duplex, status: string) {
+  socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+  socket.destroy();
+}
+
+function onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
+  if (!wss || new URL(req.url ?? "/", "http://x").pathname !== WS_PATH) return rejectUpgrade(socket, "404 Not Found");
+  if (!env.CORS_ORIGIN.includes(req.headers.origin ?? "")) return rejectUpgrade(socket, "403 Forbidden");
+  wss.handleUpgrade(req, socket, head, (ws) => wss!.emit("connection", ws, req));
+}
+
+function register(ws: LiveSocket, userId: string): boolean {
+  const mine = sockets.get(userId) ?? new Set<LiveSocket>();
+  if (mine.size >= MAX_SOCKETS_PER_USER) return false;
+  ws.userId = userId;
+  mine.add(ws);
+  sockets.set(userId, mine);
   return true;
 }
 
+function unregister(ws: LiveSocket) {
+  if (!ws.userId) return;
+  const mine = sockets.get(ws.userId);
+  mine?.delete(ws);
+  if (mine && mine.size === 0) sockets.delete(ws.userId);
+}
+
+function onConnection(ws: LiveSocket) {
+  ws.alive = true;
+  ws.on("pong", () => (ws.alive = true));
+  const authTimer = setTimeout(() => ws.close(CLOSE_AUTH_FAILED, "auth timeout"), AUTH_TIMEOUT_MS);
+
+  ws.on("message", (raw) => {
+    if (ws.userId) return; // the only message a client sends is "auth"
+    clearTimeout(authTimer);
+    try {
+      const msg = JSON.parse(raw.toString()) as { type?: string; token?: string };
+      if (msg.type !== "auth" || !msg.token) throw new Error("expected auth");
+      const { sub } = verifyAccessToken(msg.token);
+      if (!register(ws, sub)) return ws.close(CLOSE_TOO_MANY, `max ${MAX_SOCKETS_PER_USER} tabs`);
+      sendJson(ws, { type: "ready" });
+    } catch {
+      ws.close(CLOSE_AUTH_FAILED, "invalid token");
+    }
+  });
+  ws.on("close", () => {
+    clearTimeout(authTimer);
+    unregister(ws);
+  });
+  ws.on("error", () => ws.terminate());
+}
+
+// One lookup per event (names included), then fan out to the room's members.
 async function deliver(payload: string) {
-  let event: { room_id: string; type: string };
+  if (sockets.size === 0) return;
+  let ref: { id: string; room_id: string };
   try {
-    event = JSON.parse(payload);
+    ref = JSON.parse(payload);
   } catch {
     return;
   }
-  if (streams.size === 0) return;
-  const { rows } = await adminPool.query<{ user_id: string }>("SELECT user_id FROM room_members WHERE room_id = $1", [
-    event.room_id,
+  const [{ rows: events }, { rows: members }] = await Promise.all([
+    adminPool.query(
+      `SELECT a.id, a.type, a.room_id, r.name AS room_name, r.type AS room_type,
+              a.actor_id, actor.name AS actor_name, a.subject_id, subject.name AS subject_name,
+              a.amount_paise::float8 AS amount_paise, a.data, a.created_at, to_user.name AS to_name
+       FROM activity_log a
+       JOIN rooms r ON r.id = a.room_id
+       LEFT JOIN users actor ON actor.id = a.actor_id
+       LEFT JOIN users subject ON subject.id = a.subject_id
+       LEFT JOIN users to_user ON to_user.id = (a.data->>'to_user_id')::uuid
+       WHERE a.id = $1`,
+      [ref.id]
+    ),
+    adminPool.query<{ user_id: string }>("SELECT user_id FROM room_members WHERE room_id = $1", [ref.room_id]),
   ]);
-  for (const { user_id } of rows) {
-    for (const res of streams.get(user_id) ?? []) send(res, "activity", event);
+  const event = events[0];
+  if (!event) return;
+  for (const { user_id } of members) {
+    for (const ws of sockets.get(user_id) ?? []) sendJson(ws, { type: "activity", event: { ...event, unread: event.actor_id !== user_id } });
   }
 }
 
-async function connect(attempt = 0): Promise<void> {
+async function listen(attempt = 0): Promise<void> {
   if (stopping) return;
   const client = new Client({ connectionString: env.DATABASE_URL });
+  const retry = () => setTimeout(() => listen(attempt + 1), Math.min(30_000, 1_000 * 2 ** attempt)).unref();
   client.on("notification", (msg) => {
     if (msg.channel === CHANNEL && msg.payload) {
       deliver(msg.payload).catch((err) => logger.warn("Live update delivery failed", { error: (err as Error).message }));
@@ -73,37 +146,50 @@ async function connect(attempt = 0): Promise<void> {
     logger.warn("Live updates listener lost its connection", { error: err.message });
     listener = null;
     client.end().catch(() => undefined);
-    setTimeout(() => connect(attempt + 1), Math.min(30_000, 1_000 * 2 ** attempt)).unref();
+    retry();
   });
   try {
     await client.connect();
     await client.query(`LISTEN ${CHANNEL}`);
     listener = client;
-    logger.info("Live updates listening");
+    logger.info("Live updates listening (WebSocket)");
   } catch (err) {
     logger.warn("Live updates couldn't connect, retrying", { error: (err as Error).message });
     client.end().catch(() => undefined);
-    setTimeout(() => connect(attempt + 1), Math.min(30_000, 1_000 * 2 ** attempt)).unref();
+    retry();
   }
 }
 
-export async function startRealtime() {
+export async function startRealtime(server: Server) {
   stopping = false;
-  await connect();
-  // Comment lines keep idle connections from being cut by proxies.
+  wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 });
+  wss.on("connection", onConnection);
+  server.on("upgrade", onUpgrade);
   heartbeat = setInterval(() => {
-    for (const set of streams.values()) for (const res of set) res.write(": ping\n\n");
+    for (const ws of wss?.clients ?? []) {
+      const live = ws as LiveSocket;
+      if (live.alive === false) {
+        live.terminate();
+        continue;
+      }
+      live.alive = false;
+      live.ping();
+    }
   }, HEARTBEAT_MS);
   heartbeat.unref();
+  await listen();
 }
 
-// Graceful shutdown: open streams never finish on their own, so end them, or
+// Graceful shutdown: open sockets never close on their own, so close them, or
 // server.close() would wait for them until the forced exit.
-export async function stopRealtime() {
+export async function stopRealtime(server?: Server) {
   stopping = true;
   if (heartbeat) clearInterval(heartbeat);
-  for (const set of streams.values()) for (const res of set) res.end();
-  streams.clear();
+  server?.off("upgrade", onUpgrade);
+  for (const ws of wss?.clients ?? []) ws.close(1001, "server shutting down");
+  wss?.close();
+  wss = null;
+  sockets.clear();
   await listener?.end().catch(() => undefined);
   listener = null;
 }

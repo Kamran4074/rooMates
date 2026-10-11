@@ -19,6 +19,14 @@ declare global {
   }
 }
 
+// Throws if the token is invalid or expired. Shared by HTTP requests and the
+// WebSocket handshake (config/realtime.ts), so both check exactly the same way.
+export function verifyAccessToken(token: string): AuthPayload {
+  // Pin the algorithm we sign with, so a token can't pick its own
+  // (the classic "alg: none" / algorithm-confusion attacks).
+  return jwt.verify(token, env.JWT_SECRET, { algorithms: ["HS256"] }) as AuthPayload;
+}
+
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
@@ -26,10 +34,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   }
 
   try {
-    // Pin the algorithm we sign with, so a token can't pick its own
-    // (the classic "alg: none" / algorithm-confusion attacks).
-    const payload = jwt.verify(header.slice("Bearer ".length), env.JWT_SECRET, { algorithms: ["HS256"] }) as AuthPayload;
-    req.auth = payload;
+    req.auth = verifyAccessToken(header.slice("Bearer ".length));
     next();
   } catch {
     next(new AppError("Invalid or expired token", 401));

@@ -401,3 +401,35 @@ export interface ActivityEvent {
   /** Someone else did it after I last opened the feed. */
   unread: boolean;
 }
+
+/** One open fund in my rooms, from my side (GET /api/funds/summary). Amounts in paise. */
+export interface FundStatus {
+  fundId: string;
+  fundName: string;
+  roomId: string;
+  roomName: string;
+  perMemberPaise: number;
+  collector: { id: string; name: string };
+  /** I'm the collector or the room admin. */
+  canManage: boolean;
+  expectedPaise: number;
+  collectedPaise: number;
+  balancePaise: number;
+  /** null if I'm not in this fund. duePaise = not paid and not already waiting for a confirmation. */
+  me: { paidPaise: number; awaitingPaise: number; duePaise: number } | null;
+  /** Managers only: who still owes, biggest first. */
+  toCollect: { userId: string; name: string; duePaise: number; awaitingPaise: number }[];
+  /** Members' own records waiting for my confirmation (managers). */
+  toConfirm: number;
+  /** Records the collector made for me, waiting for my approval. */
+  toApprove: number;
+}
+
+/** A month's spending in one bill section (GET /api/expenses/by-category). */
+export interface CategorySpend {
+  /** null = no section. */
+  category: string | null;
+  totalPaise: number;
+  mySharePaise: number;
+  expenseCount: number;
+}

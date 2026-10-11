@@ -20,6 +20,7 @@ import { getMemberIds } from "../rooms/rooms.repository";
 
 interface FundRow {
   id: string;
+  room_id: string;
   name: string;
   per_member_paise: string;
   collector_id: string;
@@ -36,7 +37,7 @@ interface FundRow {
 // so one query replaces three. The database is a network hop away and each
 // separate query pays that delay again.
 const FUND_SELECT = `
-  SELECT f.id, f.name, f.per_member_paise, f.collector_id, f.status, f.closed_at, f.created_at,
+  SELECT f.id, f.room_id, f.name, f.per_member_paise, f.collector_id, f.status, f.closed_at, f.created_at,
          ARRAY(SELECT p.user_id FROM fund_participants p WHERE p.fund_id = f.id ORDER BY p.added_at, p.user_id) AS participant_ids,
          (SELECT m.role FROM room_members m WHERE m.room_id = f.room_id AND m.user_id = $1) AS my_role
   FROM room_funds f`;
@@ -232,13 +233,14 @@ export async function addContribution(userId: string, roomId: string, fundId: st
     // payment. Otherwise it waits for the other side: the member for a record
     // made about them, the collector for a member's own record.
     const confirmed = manager && input.memberId === userId;
-    const id = crypto.randomUUID();
-    await client.query(
-      `INSERT INTO fund_entries (id, fund_id, kind, member_id, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
-       VALUES ($1, $2, 'contribution', $3, $4, $5, $6, $7,
-               CASE WHEN $6 THEN $7::uuid END, CASE WHEN $6 THEN now() END)`,
-      [id, fundId, input.memberId, toPaise(input.amount), input.note || null, confirmed, userId]
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO fund_entries (fund_id, kind, member_id, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
+       VALUES ($1, 'contribution', $2, $3, $4, $5, $6,
+               CASE WHEN $5 THEN $6::uuid END, CASE WHEN $5 THEN now() END)
+       RETURNING id`,
+      [fundId, input.memberId, toPaise(input.amount), input.note || null, confirmed, userId]
     );
+    const id = rows[0].id;
     const waitingFor = confirmed ? null : input.memberId === userId ? ("collector" as const) : ("member" as const);
     return { id, confirmed, waitingFor };
   });
@@ -348,13 +350,13 @@ export async function addSpend(userId: string, roomId: string, fundId: string, i
       throw new AppError(`The fund only has ₹${(balance / 100).toFixed(2)} left`, 400);
     }
 
-    const id = crypto.randomUUID();
-    await client.query(
-      `INSERT INTO fund_entries (id, fund_id, kind, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
-       VALUES ($1, $2, 'spend', $3, $4, true, $5, $5, now())`,
-      [id, fundId, amountPaise, input.description, userId]
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO fund_entries (fund_id, kind, amount_paise, note, confirmed, created_by, confirmed_by, confirmed_at)
+       VALUES ($1, 'spend', $2, $3, true, $4, $4, now())
+       RETURNING id`,
+      [fundId, amountPaise, input.description, userId]
     );
-    return { id };
+    return { id: rows[0].id };
   });
 }
 
@@ -436,5 +438,75 @@ export async function closeFund(userId: string, roomId: string, fundId: string) 
     }
     await client.query("UPDATE room_funds SET status = 'closed', closed_at = now() WHERE id = $1", [fundId]);
     return { id: fundId, status: "closed" as const, transfers: s.transfers.length };
+  });
+}
+
+// ---------------- "Who owes what" across all my rooms ----------------
+
+// Every open fund in my rooms, in plain terms: what I still have to pay (and
+// to whom), and - if I run it - who still owes me and what's waiting for my
+// confirmation. Same maths as the fund page (summarise), so the numbers match.
+export async function listMyFundStatus(userId: string) {
+  return withUserContext(userId, async (client) => {
+    const { rows: funds } = await client.query<FundRow & { room_name: string }>(
+      `SELECT x.*, r.name AS room_name
+       FROM (${FUND_SELECT} WHERE f.status = 'open') x
+       JOIN rooms r ON r.id = x.room_id
+       ORDER BY x.created_at DESC`,
+      [userId]
+    );
+    if (funds.length === 0) return [];
+
+    const totalsByRoom = new Map<string, Totals>();
+    for (const roomId of new Set(funds.map((f) => f.room_id))) {
+      totalsByRoom.set(roomId, await entryTotals(client, roomId));
+    }
+    const person = await namesFor(client, [...new Set(funds.flatMap((f) => [...f.participant_ids, f.collector_id]))]);
+
+    // Payments waiting for someone's yes, per fund: members' own records wait
+    // for the collector; records the collector made for me wait for me.
+    const { rows: waiting } = await client.query<{ fund_id: string; to_confirm: number; to_approve: number }>(
+      `SELECT fund_id,
+              COUNT(*) FILTER (WHERE created_by = member_id)::int AS to_confirm,
+              COUNT(*) FILTER (WHERE member_id = $2 AND created_by <> $2)::int AS to_approve
+       FROM fund_entries
+       WHERE fund_id = ANY($1::uuid[]) AND kind = 'contribution' AND NOT confirmed AND disputed_at IS NULL
+       GROUP BY fund_id`,
+      [funds.map((f) => f.id), userId]
+    );
+    const waitingByFund = new Map(waiting.map((w) => [w.fund_id, w]));
+
+    return funds.map((fund) => {
+      const summary = summarise(fund, totalsByRoom.get(fund.room_id)!);
+      const manager = canManage(fund, userId);
+      const me = summary.members.find((m) => m.userId === userId);
+      const w = waitingByFund.get(fund.id);
+      return {
+        fundId: fund.id,
+        fundName: fund.name,
+        roomId: fund.room_id,
+        roomName: fund.room_name,
+        perMemberPaise: summary.perMemberPaise,
+        collector: { id: fund.collector_id, name: person(fund.collector_id).name },
+        canManage: manager,
+        expectedPaise: summary.expectedPaise,
+        collectedPaise: summary.collectedPaise,
+        balancePaise: summary.balancePaise,
+        // My share (null if I'm not in this fund). Due = not yet paid and not
+        // already waiting for a confirmation.
+        me: me
+          ? { paidPaise: me.paidPaise, awaitingPaise: me.awaitingPaise, duePaise: Math.max(me.pendingPaise - me.awaitingPaise, 0) }
+          : null,
+        // For whoever runs it: who still owes - biggest first, then by name (a stable order).
+        toCollect: manager
+          ? summary.members
+              .filter((m) => m.userId !== fund.collector_id && m.pendingPaise > 0)
+              .map((m) => ({ userId: m.userId, name: person(m.userId).name, duePaise: m.pendingPaise, awaitingPaise: m.awaitingPaise }))
+              .sort((a, b) => b.duePaise - a.duePaise || a.name.localeCompare(b.name))
+          : [],
+        toConfirm: manager ? (w?.to_confirm ?? 0) : 0,
+        toApprove: w?.to_approve ?? 0,
+      };
+    });
   });
 }

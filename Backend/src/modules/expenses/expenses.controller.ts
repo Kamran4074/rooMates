@@ -10,6 +10,7 @@ import {
   getRoomBalances,
   listMyExpenses,
   getMonthlySummary,
+  getCategoryBreakdown,
 } from "./expenses.service";
 
 export async function handleCreateExpense(req: Request, res: Response) {
@@ -42,4 +43,8 @@ export async function handleListMyExpenses(req: Request, res: Response) {
 export async function handleMonthlySummary(req: Request, res: Response) {
   const { roomId } = monthlySummaryQuerySchema.parse(req.query);
   sendSuccess(res, await getMonthlySummary(req.auth!.sub, roomId));
+}
+
+export async function handleCategoryBreakdown(req: Request, res: Response) {
+  sendSuccess(res, await getCategoryBreakdown(req.auth!.sub, monthExpensesQuerySchema.parse(req.query)));
 }

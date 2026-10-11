@@ -13,6 +13,7 @@ import { AdminSidebar } from "@/components/app/AdminSidebar";
 import { useAuthStore } from "@/store/authStore";
 import { AppTopbar } from "@/components/app/AppTopbar";
 import { Modal } from "@/components/ui/Modal";
+import { Toaster } from "@/components/ui/Toaster";
 import { CreateRoomForm } from "@/components/rooms/CreateRoomForm";
 import { JoinRoomForm } from "@/components/rooms/JoinRoomForm";
 
@@ -80,6 +81,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <AppTopbar onMenu={() => setDrawerOpen(true)} />
         <main className="flex-1 px-4 sm:px-8 py-8 max-w-6xl w-full mx-auto">{children}</main>
       </div>
+
+      <Toaster />
 
       <Modal open={modal === "create"} onClose={closeModal} title="Create a room or group">
         <CreateRoomForm onCreated={(room) => openRoom(room.id)} />
