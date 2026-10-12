@@ -17,7 +17,7 @@ export interface RoomDetail extends Room {
   /** Size limit from the room owner's plan. */
   member_count: number;
   max_members: number;
-  plan: "free" | "paid";
+  plan: PlanId;
 }
 
 /** A room as returned by GET /api/rooms, with the caller's balance in it. */
@@ -282,7 +282,7 @@ export interface Me {
   phone: string | null;
   picture: string | null;
   onboarding_completed: boolean;
-  plan: "free" | "paid";
+  plan: PlanId;
   max_rooms: number;
   max_members_per_room: number;
   room_count: number;
@@ -308,7 +308,7 @@ export interface AdminUser {
   has_password: boolean;
   /** Finished onboarding (name + phone). */
   onboarding_completed: boolean;
-  plan: "free" | "paid";
+  plan: PlanId;
   listing_count: number;
   room_count: number;
   /** Groups they run (they're the room admin). */
@@ -322,6 +322,7 @@ export interface AdminUserDetail extends Omit<AdminUser, "listing_count" | "room
   email_verified: boolean;
   max_rooms: number;
   max_members_per_room: number;
+  plan_expires_at: string | null;
   active_sessions: number;
   rooms: { id: string; name: string; type: RoomType; role: "admin" | "member"; joined_at: string; member_count: number; net_paise: number }[];
   listings: { id: string; title: string; status: ListingStatus; city: string; created_at: string }[];
@@ -450,4 +451,60 @@ export interface JoinRequests {
   mine: { id: string; room_id: string; room_name: string; room_type: RoomType; created_at: string }[];
   /** Others', for rooms I run, waiting for me. */
   toApprove: { id: string; room_id: string; room_name: string; user_id: string; name: string; email: string; picture: string | null; created_at: string }[];
+}
+
+// ---------------- Plans ----------------
+
+export type PlanId = "basic" | "standard" | "premium";
+export type PaidPlanId = Exclude<PlanId, "basic">;
+export type BillingCycle = "monthly" | "yearly";
+export type PlanFeature = "roomFund" | "billSections" | "findRoom";
+
+/** GET /api/plans - one plan in the price list. Prices in paise. */
+export interface PlanInfo {
+  id: PlanId;
+  name: string;
+  tagline: string;
+  price: Record<BillingCycle, number>;
+  maxRooms: number;
+  maxMembersPerRoom: number;
+  maxListings: number;
+  unlimited: boolean;
+  features: Record<PlanFeature, boolean>;
+  support: string;
+}
+
+export interface UpgradeRequest {
+  id: string;
+  plan: PaidPlanId;
+  billing_cycle: BillingCycle;
+  amount_paise: number;
+  phone: string;
+  note: string | null;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  created_at: string;
+  decided_at: string | null;
+  admin_note: string | null;
+}
+
+/** GET /api/plans/me */
+export interface MyPlan {
+  plan: PlanId;
+  /** When a paid plan ends (then it's Basic again); null = no end. */
+  expiresAt: string | null;
+  limits: { maxRooms: number; maxMembersPerRoom: number; maxListings: number };
+  features: Record<PlanFeature, boolean>;
+  usage: { rooms: number; listings: number };
+  latestRequest: UpgradeRequest | null;
+}
+
+/** GET /api/admin/upgrade-requests */
+export interface AdminUpgradeRequest extends UpgradeRequest {
+  user_id: string;
+  name: string;
+  email: string;
+  picture: string | null;
+  current_plan: PlanId;
+  plan_expires_at: string | null;
+  decided_by_name: string | null;
 }

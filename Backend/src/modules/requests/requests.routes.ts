@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireFeature } from "../../middlewares/planGate";
 import { authenticate } from "../../middlewares/authenticate";
 import * as c from "./requests.controller";
 
@@ -7,7 +8,7 @@ const router = Router();
 
 router.use(authenticate);
 
-router.post("/", c.handleCreate);
+router.post("/", requireFeature("findRoom"), c.handleCreate);
 router.get("/sent", c.handleSent);
 router.get("/received", c.handleReceived);
 router.patch("/:requestId", c.handleRespond);

@@ -3,6 +3,7 @@ import { withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
 import { getMemberIds, requireMember, requireRoomAdmin } from "../rooms/rooms.repository";
 import { CreateCategoryInput, UpdateCategoryInput } from "./categories.schema";
+import { requireRoomFeature } from "../../middlewares/planGate";
 
 // Sections of a room's bills (Rent, Groceries, WiFi...) and who shares each.
 // Only the room admin edits them (checked here for a clear message, and by
@@ -45,6 +46,7 @@ export async function listCategories(userId: string, roomId: string) {
 export async function createCategory(userId: string, roomId: string, input: CreateCategoryInput) {
   return withUserContext(userId, async (client) => {
     await requireRoomAdmin(client, roomId, userId);
+    await requireRoomFeature(client, roomId, "billSections");
     const memberIds = [...new Set(input.memberIds)];
     await checkMembers(client, roomId, memberIds);
     try {

@@ -427,7 +427,7 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: profileResponseSchema.extend({
-            plan: z.enum(["free", "paid"]),
+            plan: z.enum(["basic", "standard", "premium"]),
             max_rooms: z.number(),
             room_count: z.number(),
           }),
@@ -859,9 +859,45 @@ route("post", "/api/admin/users/{id}/suspend", "Admin", "Suspend an account: blo
 route("post", "/api/admin/users/{id}/unsuspend", "Admin", "Restore a suspended account (audit-logged)", { params: idParams, status: 200, errors: adminOnly });
 route("post", "/api/admin/users/{id}/plan", "Admin", "Move an account to the free or paid plan: sets its room quota and people-per-room limit (audit-logged)", {
   params: idParams,
-  body: z.object({ plan: z.enum(["free", "paid"]) }),
+  body: z.object({ plan: z.enum(["basic", "standard", "premium"]) }),
   status: 200,
   errors: { ...adminOnly, 409: "Already on that plan" },
+});
+route("get", "/api/admin/pricing", "Admin", "The price list with how many accounts are on each plan and who changed it last", { errors: adminOnly });
+route("patch", "/api/admin/pricing/{plan}", "Admin", "Change a plan's prices (rupees), limits and features; limits apply to everyone on it at once (audit-logged)", {
+  params: z.object({ plan: z.enum(["basic", "standard", "premium"]) }),
+  body: z.object({
+    name: z.string(), tagline: z.string(), priceMonthly: z.number(), priceYearly: z.number(), maxRooms: z.number(), maxMembersPerRoom: z.number(),
+    maxListings: z.number(), unlimited: z.boolean(), features: z.object({ roomFund: z.boolean(), billSections: z.boolean(), findRoom: z.boolean() }), support: z.string(),
+  }),
+  errors: { ...adminOnly, 400: "Invalid price or limit" },
+});
+route("get", "/api/admin/upgrade-requests", "Admin", "Plan upgrade requests (pending oldest first) with the mobile number to call", {
+  query: z.object({ status: z.enum(["pending", "approved", "rejected", "cancelled"]).optional() }),
+  errors: adminOnly,
+});
+route("post", "/api/admin/upgrade-requests/{id}/approve", "Admin", "Payment received: activate the plan for a month or a year (renewals extend it; audit-logged)", {
+  params: idParams,
+  body: z.object({ note: z.string().optional() }),
+  status: 200,
+  errors: { ...adminOnly, 404: "Request not found", 409: "Already decided" },
+});
+route("post", "/api/admin/upgrade-requests/{id}/reject", "Admin", "Decline an upgrade request (audit-logged)", {
+  params: idParams,
+  body: z.object({ note: z.string().optional() }),
+  status: 200,
+  errors: { ...adminOnly, 404: "Request not found", 409: "Already decided" },
+});
+route("get", "/api/plans", "Plans", "The price list: Basic, Standard, Premium with prices, limits and features (public)", { status: 200 });
+route("get", "/api/plans/me", "Plans", "My plan, its limits and end date, my usage and my latest upgrade request", { status: 200 });
+route("post", "/api/plans/upgrade-requests", "Plans", "Ask for Standard or Premium (monthly/yearly) with a mobile number; the team calls to take payment", {
+  body: z.object({ plan: z.enum(["standard", "premium"]), billingCycle: z.enum(["monthly", "yearly"]), phone: z.string(), note: z.string().optional() }),
+  errors: { 409: "A request is already waiting" },
+});
+route("post", "/api/plans/upgrade-requests/{requestId}/cancel", "Plans", "Withdraw my waiting request", {
+  params: z.object({ requestId: z.string().uuid() }),
+  status: 200,
+  errors: { 404: "No waiting request" },
 });
 route("get", "/api/admin/listings", "Admin", "All listings by status; the pending queue is oldest first", {
   query: listingsQuery,

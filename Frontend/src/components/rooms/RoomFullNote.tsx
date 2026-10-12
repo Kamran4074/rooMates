@@ -5,7 +5,8 @@ import type { RoomDetail } from "@/lib/types";
 // Shown to the room admin once the room has as many people as its plan
 // allows: new join requests are turned away until it's upgraded.
 export function RoomFullNote({ room }: { room: Pick<RoomDetail, "member_count" | "max_members" | "plan"> }) {
-  if (room.member_count < room.max_members) return null;
+  // No limit info (e.g. an older API) means we can't say it's full.
+  if (room.max_members == null || room.member_count < room.max_members) return null;
   return (
     <div className="rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm">
       <p className="font-medium">This room is full</p>

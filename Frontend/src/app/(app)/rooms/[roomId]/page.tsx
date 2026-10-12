@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Plus, UserPlus, UserMinus, Receipt, Trash2, Users as UsersIcon } from "lucide-react";
@@ -30,6 +30,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/Skeleton";
 import { PageError } from "@/components/ui/PageError";
+import { usePlanStore } from "@/store/planStore";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -41,6 +42,11 @@ export default function RoomPage() {
   const confirm = useConfirm();
 
   // Four independent requests, fired in parallel.
+  const catalog = usePlanStore((s) => s.catalog);
+  const loadCatalog = usePlanStore((s) => s.loadCatalog);
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
   const roomQuery = useApiQuery<RoomDetail>(`/api/rooms/${roomId}`);
   const membersQuery = useApiQuery<Member[]>(`/api/rooms/${roomId}/members`);
   const [expensePage, setExpensePage] = useState(1);
@@ -139,6 +145,8 @@ export default function RoomPage() {
   }
 
   const isAdmin = room.my_role === "admin";
+  // Funds and sections follow the room owner's plan (they pay for the room).
+  const roomPlan = catalog?.find((p) => p.id === room.plan);
   const myNet = balances.find((b) => b.userId === user?.id)?.netPaise ?? 0;
   const total = room.total_spent_paise;
 
@@ -244,9 +252,10 @@ export default function RoomPage() {
         </Card>
 
         <div className="flex flex-col gap-6">
-          <RoomFundCard roomId={roomId} fund={latestFund} />
+          <RoomFundCard roomId={roomId} fund={latestFund} locked={!roomPlan?.features.roomFund} isAdmin={isAdmin} />
 
           <CategoriesCard
+            locked={!roomPlan?.features.billSections}
             roomId={roomId}
             members={members}
             categories={categoriesQuery.data ?? []}
@@ -266,9 +275,11 @@ export default function RoomPage() {
           <Card className="rounded-3xl p-6">
             <h2 className="font-semibold flex items-center gap-2 mb-4">
               <UsersIcon className="h-4 w-4" /> Members
-              <span className="ml-auto text-xs font-normal text-foreground/50" title={`The ${room.plan} plan allows ${room.max_members} people per room`}>
-                {room.member_count} / {room.max_members}
-              </span>
+              {room.max_members != null && (
+                <span className="ml-auto text-xs font-normal text-foreground/50" title={`The ${room.plan} plan allows ${room.max_members} people per room`}>
+                  {room.member_count} / {room.max_members}
+                </span>
+              )}
             </h2>
             {isAdmin && (
               <div className="mb-4">
@@ -279,9 +290,14 @@ export default function RoomPage() {
               {members.map((m) => (
                 <li key={m.user_id} className="flex items-center gap-3">
                   <Avatar name={m.name} picture={m.picture} size={32} />
-                  <span className="text-sm font-medium truncate flex-1">
-                    {m.name}
-                    {m.user_id === user?.id && <span className="text-foreground/45 font-normal"> (you)</span>}
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium truncate">
+                      {m.name}
+                      {m.user_id === user?.id && <span className="text-foreground/45 font-normal"> (you)</span>}
+                    </span>
+                    <span className="block text-xs text-foreground/50 truncate" title={m.email}>
+                      {m.email}
+                    </span>
                   </span>
                   {m.role === "admin" && <span className="text-[10px] uppercase tracking-wider font-semibold text-primary">Admin</span>}
                   {isAdmin && m.role !== "admin" && (

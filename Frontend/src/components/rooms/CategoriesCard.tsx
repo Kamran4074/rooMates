@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Layers, Pencil, Plus, Trash2 } from "lucide-react";
 import { errorMessage } from "@/lib/api";
 import type { Category, Member } from "@/lib/types";
@@ -19,12 +20,15 @@ export function CategoriesCard({
   members,
   categories,
   isAdmin,
+  locked = false,
   onChanged,
 }: {
   roomId: string;
   members: Member[];
   categories: Category[];
   isAdmin: boolean;
+  /** The room's plan doesn't include sections: existing ones still work, no new ones. */
+  locked?: boolean;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState<Category | "new" | null>(null);
@@ -57,7 +61,7 @@ export function CategoriesCard({
         <h2 className="font-semibold flex items-center gap-2">
           <Layers className="h-4 w-4" /> Bill sections
         </h2>
-        {isAdmin && (
+        {isAdmin && !locked && (
           <button onClick={() => setEditing("new")} className="inline-flex items-center gap-1 text-sm font-medium text-primary">
             <Plus className="h-4 w-4" /> Add
           </button>
@@ -65,7 +69,14 @@ export function CategoriesCard({
       </div>
       <p className="text-xs text-foreground/50 mb-4">Each bill is split between the people in its section.</p>
 
-      {categories.length === 0 ? (
+      {categories.length === 0 && locked ? (
+        <p className="text-sm text-foreground/60">
+          On the Standard plan and above.{" "}
+          <Link href="/plans" className="text-primary font-medium">
+            See plans
+          </Link>
+        </p>
+      ) : categories.length === 0 ? (
         <p className="text-sm text-foreground/55">
           Add sections like Rent, Groceries or WiFi and pick who pays for each - e.g. leave out whoever&apos;s away this month.
         </p>

@@ -75,7 +75,23 @@ stateDiagram-v2
     published --> removed: admin takes down
 ```
 
-Business rules worth knowing: the free plan allows 2 created rooms per account and 4 people per room (admin included; paid: 10 rooms, 20 people). A room follows its creator's plan; a full room turns away new join requests, and the limit is enforced by a database trigger that locks the room row, so two approvals at once can't both take the last seat. Rooms already over the limit keep everyone. Until payments are wired up, the super admin switches a user's plan from the admin console (audit-logged); at most 5 active listings per account; listing photos are limited to 6 (JPG/PNG/WebP, under 5 MB); a member can only be removed from a room once their balance is zero; each user can request and report a listing once; a fund can never be spent below zero, and its participants are fixed when it starts (someone joining the room later isn't asked to pay).
+### Plans
+
+| | Basic | Standard | Premium |
+|---|---|---|---|
+| Price | Free | ₹49/month or ₹490/year | ₹99/month or ₹990/year |
+| Rooms you create | 2 | 5 | Unlimited (fair use: 100) |
+| People per room | 4 | 10 | Unlimited (fair use: 100) |
+| Split bills, settle up, trips | ✓ | ✓ | ✓ |
+| Room funds, bill sections | locked | ✓ | ✓ |
+| Find a room | locked | ✓ (2 active listings) | ✓ (10 active listings) |
+
+- Everyone starts on Basic; onboarding has a "Choose your plan" step, and the public `/pricing` and in-app `/plans` pages show the same cards. Prices, limits and features live in the `plan_catalog` table: the super admin edits them on **Admin > Pricing** (with a live preview of the cards), and the pricing page, onboarding and Plans page all read them through `GET /api/plans`. Changing a plan's limits applies to every account on it at once; upgrade requests already sent keep the price they were quoted. Every change is audit-logged with a before/after diff
+- No payment gateway yet: choosing a paid plan sends an upgrade request with a mobile number. The super admin's **Upgrades** page lists them (call / WhatsApp links); after taking the payment they click "Payment received - activate", and the plan runs for the month or year paid (renewing early extends it). Approvals and declines are audit-logged
+- When a paid plan ends, an hourly job moves the account back to Basic. Nothing is deleted: existing rooms, funds and sections keep working; only starting new ones, Find a room and growing a room past 4 people wait for a renewal
+- Room features (funds, sections, size) follow the room owner's plan; Find a room follows your own. The API enforces every lock (403 with an "upgrade" message); the UI shows locks so Basic users see why
+
+Business rules worth knowing: plans set the limits (see Plans below); a room follows its creator's plan; a full room turns away new join requests, and the limit is enforced by a database trigger that locks the room row, so two approvals at once can't both take the last seat. Rooms already over the limit keep everyone; listing photos are limited to 6 (JPG/PNG/WebP, under 5 MB); a member can only be removed from a room once their balance is zero; each user can request and report a listing once; a fund can never be spent below zero, and its participants are fixed when it starts (someone joining the room later isn't asked to pay).
 
 **Super admin**
 - Dashboard: accounts, new signups and active users (7 / 30 days), suspended and deleted, groups and average group size, expenses, listings and reports
@@ -272,6 +288,8 @@ Frontend/src/
 |---|---|
 | `users`, `organizations` | accounts (role, suspension, `last_active_at`, `deleted_at` for anonymised accounts, `email_verified_at` / `onboarding_completed_at` stamped by a trigger, `notifications_seen_at`), billing tenant / room quota |
 | `rooms`, `room_members` | expense rooms and who's in them (role: admin/member; a partial unique index allows exactly one admin per room) |
+| `plan_catalog` | the price list: one row per plan (basic/standard/premium) with prices in paise, limits and feature flags; readable by everyone, writable only from the admin console. `organizations.plan` references it |
+| `plan_upgrade_requests` | a user asking for Standard/Premium (monthly/yearly), the price quoted, the mobile number to call, and the super admin's decision; one pending request per user; users can only see and cancel their own (RLS) |
 | `room_join_requests` | invite-code requests waiting for the room admin (pending/approved/rejected, who decided and when; one pending request per person per room) |
 | `expenses`, `expense_splits` | each expense (who paid, `expense_date` = day spent, `created_by` = who entered it; soft delete via `deleted_at`/`deleted_by`) and each member's share (integer paise) |
 | `settlements` | recorded settle-up payments: from, to, amount, `settled_on` (soft delete like expenses) |
@@ -342,13 +360,14 @@ Main groups:
 | Users | `GET/PATCH /api/users/me`, `POST /api/users/me/onboarding` |
 | Rooms & expenses | `GET/POST /api/rooms`, `POST /api/rooms/join` (202: request sent), `GET /api/rooms/join-requests`, `POST /api/rooms/:id/join-requests/:requestId/approve\|reject`, `GET /api/rooms/:id/expenses?page=`, `DELETE /api/rooms/:id/expenses/:expenseId`, `GET /api/rooms/:id/balances`, `DELETE /api/rooms/:id/members/:userId` |
 | Bill sections | `GET/POST /api/rooms/:id/categories`, `PATCH/DELETE /api/rooms/:id/categories/:categoryId` (room admin) |
+| Plans | `GET /api/plans` (public price list), `GET /api/plans/me`, `POST /api/plans/upgrade-requests`, `POST /api/plans/upgrade-requests/:id/cancel` |
 | Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/seen`; live updates: WebSocket `/api/ws` |
 | Fund approvals | `GET /api/fund-approvals`, `POST /api/rooms/:id/funds/:fundId/entries/:entryId/confirm`, `.../dispute` |
 | Settle up | `GET/POST /api/rooms/:id/settlements`, `DELETE /api/rooms/:id/settlements/:settlementId` |
 | Funds | `GET/POST /api/rooms/:id/funds`, `POST .../funds/:fundId/contributions`, `POST .../spends`, `POST .../entries/:entryId/confirm`, `GET .../close-preview`, `POST .../close` |
 | Listings | `GET /api/listings?city=&minRent=&maxRent=&roomType=`, `GET /api/listings/nearby?lat=&lng=&radiusKm=`, `GET /api/listings/mine`, `POST/PATCH/DELETE /api/listings/:id`, `POST /api/listings/:id/status`, photos, reports |
 | Requests | `POST /api/requests`, `GET /api/requests/sent`, `GET /api/requests/received`, `PATCH /api/requests/:id` |
-| Admin | `GET /api/admin/stats`, `/onboarding`, `/users`, `/users/export` (CSV), `/users/:id`, `/users/:id/groups`, `/listings`, `/reports`, `/rooms`, `/audit-logs`; approve/reject/remove, suspend, delete user, resolve |
+| Admin | `GET /api/admin/stats`, `/onboarding`, `/users`, `/users/export` (CSV), `/users/:id`, `/users/:id/groups`, `/listings`, `/reports`, `/rooms`, `/audit-logs`, `/upgrade-requests` (+ approve/reject), `/pricing` (GET, PATCH `/pricing/:plan`); approve/reject/remove, suspend, delete user, change plan, resolve |
 
 ## Local setup
 
@@ -426,7 +445,7 @@ npm test            # unit tests: settlement algorithm, splits, fund maths, geo,
 npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
 ```
 
-**33 unit tests and 91 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**33 unit tests and 99 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), plans (Basic locks, upgrade requests, admin approval for the period paid, renewals that extend, expiry back to Basic, the admin pricing editor), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 

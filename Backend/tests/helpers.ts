@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import app from "../src/app";
 import { env } from "../src/config/env";
 import { adminPool, pool } from "../src/config/db";
+import { Plan } from "../src/config/plans";
 
 // Integration-test helpers: the real Express app on a random port, real
 // database (from .env), throwaway users created directly in the DB and
@@ -27,13 +28,19 @@ export interface TestUser {
   token: string;
 }
 
-export async function createUser(options: { role?: "user" | "super_admin"; phone?: boolean } = {}): Promise<TestUser> {
+// Test users are on Premium (every feature) unless a test is about plans and asks for one.
+export async function createUser(options: { role?: "user" | "super_admin"; phone?: boolean; plan?: Plan } = {}): Promise<TestUser> {
   const id = crypto.randomUUID();
   const orgId = crypto.randomUUID();
   const email = `apitest-${id.slice(0, 8)}@example.com`;
   // A unique, valid Indian mobile per user (the column is unique).
   const phone = options.phone === false ? null : `+919${String(crypto.randomInt(0, 1e9)).padStart(9, "0")}`;
-  await adminPool.query("INSERT INTO organizations (id, name) VALUES ($1, 'api test')", [orgId]);
+  const plan = options.plan ?? "premium";
+  await adminPool.query(
+    `INSERT INTO organizations (id, name, plan, max_rooms, max_members_per_room)
+     SELECT $1, 'api test', id, max_rooms, max_members_per_room FROM plan_catalog WHERE id = $2`,
+    [orgId, plan]
+  );
   await adminPool.query(
     `INSERT INTO users (id, organization_id, email, name, phone, role, email_verified, onboarding_completed, password_hash)
      VALUES ($1, $2, $3, $4, $5, $6, true, true, 'not-a-real-hash')`,

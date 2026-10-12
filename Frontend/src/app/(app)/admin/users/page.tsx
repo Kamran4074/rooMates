@@ -25,6 +25,7 @@ import { LoadingState } from "@/components/ui/Skeleton";
 import { MobileList, SortButton, Table, Td, Th } from "@/components/ui/Table";
 import { UserStatusBadges, signInMethod } from "@/components/admin/UserStatusBadges";
 import { UserAction, UserActionModals } from "@/components/admin/UserActionModals";
+import { PLAN_NAMES } from "@/lib/plans";
 
 type Sort = "newest" | "oldest" | "last_active" | "least_active";
 
@@ -218,7 +219,7 @@ export default function AdminUsersPage() {
                     </div>
                   </Td>
                   <Td className="whitespace-nowrap">{u.phone ?? "—"}</Td>
-                  <Td className="hidden 2xl:table-cell"><Badge tone={u.plan === "paid" ? "success" : "neutral"}>{u.plan}</Badge></Td>
+                  <Td className="hidden 2xl:table-cell"><Badge tone={u.plan === "basic" ? "neutral" : "success"}>{PLAN_NAMES[u.plan]}</Badge></Td>
                   <Td className="hidden 2xl:table-cell">{u.onboarding_completed ? <Badge tone="success">Yes</Badge> : <Badge tone="accent">No</Badge>}</Td>
                   <Td align="right" className="whitespace-nowrap">
                     {grouped && u.owned_group_count > 0 ? (

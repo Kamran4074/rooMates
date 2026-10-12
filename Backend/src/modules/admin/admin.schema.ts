@@ -50,7 +50,33 @@ export const reasonSchema = z.object({
   reason: z.string().trim().min(3, "Give a short reason").max(300),
 });
 
-export const planSchema = z.object({ plan: z.enum(["free", "paid"]) });
+export const planSchema = z.object({ plan: z.enum(["basic", "standard", "premium"]) });
+
+export const upgradeRequestsQuery = paginationQuery.extend({
+  status: z.enum(["pending", "approved", "rejected", "cancelled"]).optional(),
+});
+
+const rupees = z.coerce.number().min(0).max(100_000);
+const count = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
+
+// One plan in the price list, as the admin's Pricing form sends it (prices in rupees).
+export const planCatalogSchema = z.object({
+  name: z.string().trim().min(2).max(30),
+  tagline: z.string().trim().max(120),
+  priceMonthly: rupees,
+  priceYearly: rupees,
+  maxRooms: count(1, 100),
+  maxMembersPerRoom: count(2, 100),
+  maxListings: count(0, 100),
+  unlimited: z.boolean(),
+  features: z.object({ roomFund: z.boolean(), billSections: z.boolean(), findRoom: z.boolean() }),
+  support: z.string().trim().min(1).max(40),
+});
+export type PlanCatalogInput = z.infer<typeof planCatalogSchema>;
+
+export const planIdParam = z.enum(["basic", "standard", "premium"]);
+
+export const decisionNoteSchema = z.object({ note: z.string().trim().max(500).optional() });
 
 export const optionalReasonSchema = z.object({
   reason: z.string().trim().max(300).optional(),

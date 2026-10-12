@@ -4,7 +4,6 @@ import { pool, withUserContext } from "../../config/db";
 import { AppError } from "../../middlewares/errorHandler";
 import { CreateRoomInput } from "./rooms.schema";
 import { requireRoomAdmin } from "./rooms.repository";
-import { PLAN_LIMITS } from "../../config/plans";
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) since people type this by hand.
 const INVITE_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -15,7 +14,8 @@ function generateInviteCode(length = 8): string {
     .join("");
 }
 
-const FREE_TIER_MAX_ROOMS = PLAN_LIMITS.free.maxRooms;
+// Fallback only: the real limit is the organization's max_rooms (from its plan).
+const FREE_TIER_MAX_ROOMS = 2;
 
 // Only the admin hands out the invite code, so only the admin is sent it.
 // (RLS works on rows, not columns - hiding a column is the query's job.)
@@ -52,7 +52,7 @@ export async function createRoom(userId: string, organizationId: string, input: 
 
     if (currentCount >= maxRooms) {
       throw new AppError(
-        `Room limit reached (${maxRooms} rooms on the ${orgResult.rows[0]?.plan ?? "free"} plan). Upgrade to create more.`,
+        `Room limit reached (${maxRooms} rooms on the ${orgResult.rows[0]?.plan ?? "basic"} plan). Upgrade to create more.`,
         403
       );
     }

@@ -36,7 +36,7 @@ export async function getMe(userId: string) {
   return withUserContext(userId, async (client) => {
     const result = await client.query(
       `SELECT u.id, u.email, u.name, u.phone, u.picture, u.onboarding_completed,
-              o.plan, o.max_rooms, o.max_members_per_room, count_org_rooms(o.id) AS room_count
+              o.plan, o.plan_expires_at, o.max_rooms, o.max_members_per_room, count_org_rooms(o.id) AS room_count
        FROM users u
        JOIN organizations o ON o.id = u.organization_id
        WHERE u.id = $1`,

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Building2, Flag, LayoutDashboard, Megaphone, Route, ScrollText, Settings, Users } from "lucide-react";
+import { Building2, Flag, IndianRupee, LayoutDashboard, Megaphone, Route, ScrollText, Settings, Sparkles, Users } from "lucide-react";
+import { apiAuthGetPage } from "@/lib/api";
 import { Logo } from "@/components/Logo";
 import { NavLink } from "./NavLink";
 
@@ -11,6 +13,8 @@ const ITEMS = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/onboarding", label: "Onboarding", icon: Route },
   { href: "/admin/rooms", label: "Groups", icon: Building2 },
+  { href: "/admin/upgrades", label: "Upgrades", icon: Sparkles },
+  { href: "/admin/pricing", label: "Pricing", icon: IndianRupee },
   { href: "/admin/listings", label: "Listings", icon: Megaphone },
   { href: "/admin/reports", label: "Reports", icon: Flag },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
@@ -21,6 +25,14 @@ const ITEMS = [
 // are offered here.
 export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  // Plan requests waiting for a call back, re-checked on every page change.
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    apiAuthGetPage("/api/admin/upgrade-requests?status=pending&limit=1").then(
+      (page) => setWaiting(page.pagination.total),
+      () => {}
+    );
+  }, [pathname]);
 
   return (
     <nav className="h-full flex flex-col gap-6 p-4 overflow-y-auto" onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>
@@ -33,6 +45,11 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
         {ITEMS.map(({ href, label, icon: Icon }) => (
           <NavLink key={href} href={href} active={href === "/admin" ? pathname === "/admin" : pathname.startsWith(href)}>
             <Icon className="h-4 w-4" /> {label}
+            {href === "/admin/upgrades" && waiting > 0 && (
+              <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-accent text-white text-xs font-semibold flex items-center justify-center" aria-label={`${waiting} waiting`}>
+                {waiting}
+              </span>
+            )}
           </NavLink>
         ))}
       </div>

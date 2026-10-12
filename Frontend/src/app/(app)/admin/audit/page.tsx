@@ -27,6 +27,11 @@ const ACTION_LABELS: Record<string, string> = {
   UNSUSPENDED_USER: "restored a user",
   RESOLVED_REPORT: "resolved a report",
   DISMISSED_REPORT: "dismissed a report",
+  CHANGED_PRICING: "changed pricing",
+  CHANGED_PLAN: "changed a user's plan",
+  APPROVED_UPGRADE: "activated a paid plan",
+  REJECTED_UPGRADE: "declined a plan request",
+  EXPORTED_USERS: "exported users",
 };
 
 export default function AuditLogPage() {

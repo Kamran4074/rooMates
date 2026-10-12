@@ -7,7 +7,8 @@ import { ArrowLeft, ChevronRight, ShieldOff, ShieldCheck, Trash2 } from "lucide-
 import { errorMessage } from "@/lib/api";
 import { formatDate, rupees, timeAgo } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
-import type { AdminUserDetail } from "@/lib/types";
+import type { AdminUserDetail, PlanId } from "@/lib/types";
+import { PLAN_NAMES } from "@/lib/plans";
 import { setUserPlan, unsuspendUser } from "@/services/adminApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -47,7 +48,7 @@ export default function AdminUserPage() {
 
   const manageable = u.role !== "super_admin" && !u.deleted_at;
 
-  async function changePlan(plan: "free" | "paid") {
+  async function changePlan(plan: PlanId) {
     setActionError(null);
     try {
       await setUserPlan(u!.id, plan);
@@ -113,14 +114,21 @@ export default function AdminUserPage() {
           <Fact label="Signs in with">{signInMethod(u)}</Fact>
           <Fact label="Signed-in devices">{u.active_sessions}</Fact>
           <Fact label="Plan">
-            <span className="capitalize">{u.plan}</span> · {u.max_rooms} rooms, {u.max_members_per_room} people each
+            {PLAN_NAMES[u.plan]} · {u.max_rooms} rooms, {u.max_members_per_room} people each
+            {u.plan_expires_at && <span className="block text-xs text-foreground/50">until {formatDate(u.plan_expires_at)}</span>}
             {manageable && (
-              <button
-                onClick={() => changePlan(u.plan === "paid" ? "free" : "paid")}
-                className="block mt-1 text-xs font-semibold text-primary hover:underline"
+              <select
+                aria-label="Change plan"
+                value={u.plan}
+                onChange={(e) => changePlan(e.target.value as PlanId)}
+                className="block mt-1 text-xs font-semibold text-primary bg-transparent border border-card-border rounded-md px-1.5 py-0.5"
               >
-                {u.plan === "paid" ? "Move to free" : "Upgrade to paid"}
-              </button>
+                {(["basic", "standard", "premium"] as const).map((p) => (
+                  <option key={p} value={p}>
+                    {PLAN_NAMES[p]}
+                  </option>
+                ))}
+              </select>
             )}
           </Fact>
           <Fact label="Email verified">{u.email_verified ? "Yes" : "No"}</Fact>

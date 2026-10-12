@@ -5,6 +5,7 @@ import { AppError } from "../../middlewares/errorHandler";
 import { PageParams } from "../../utils/pagination";
 import { assertOwnUpload, createUploadSignature, deleteImage } from "../../config/imageStorage";
 import * as repo from "./listings.repository";
+import { planInfoOf } from "../../middlewares/planGate";
 import { ListingRow, ListingStatus } from "./listings.repository";
 import {
   CreateListingInput,
@@ -15,7 +16,6 @@ import {
 
 const MAX_IMAGES = 6;
 // Anti-spam: how many listings one account can have that aren't removed/rented.
-const MAX_ACTIVE_LISTINGS = 5;
 
 // Object-level authorization. Being signed in isn't enough to change a
 // listing - it has to be YOURS. RLS already hides other people's unpublished
@@ -85,8 +85,9 @@ export async function create(userId: string, input: CreateListingInput) {
       "SELECT COUNT(*)::int AS count FROM listings WHERE owner_id = $1 AND status NOT IN ('removed', 'rented')",
       [userId]
     );
-    if (rows[0].count >= MAX_ACTIVE_LISTINGS) {
-      throw new AppError(`You can have up to ${MAX_ACTIVE_LISTINGS} active listings`, 403);
+    const plan = await planInfoOf(userId);
+    if (rows[0].count >= plan.maxListings) {
+      throw new AppError(`The ${plan.name} plan allows ${plan.maxListings} active listings. Upgrade for more.`, 403);
     }
 
     const id = crypto.randomUUID();

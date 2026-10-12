@@ -23,6 +23,7 @@ import contactRoutes from "./modules/contact/contact.routes";
 import listingRoutes from "./modules/listings/listings.routes";
 import requestRoutes from "./modules/requests/requests.routes";
 import adminRoutes from "./modules/admin/admin.routes";
+import planRoutes from "./modules/plans/plans.routes";
 
 const app = express();
 
@@ -69,6 +70,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/listings", listingRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/plans", planRoutes);
 
 // The spec is static for a given build - generate it once, not per request.
 const openApiDocument = getOpenApiDocument();

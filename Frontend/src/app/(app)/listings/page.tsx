@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PlanGate } from "@/components/plans/PlanGate";
 
 interface Filters {
   city: string;
@@ -36,6 +37,14 @@ function toQuery(params: Record<string, string | number | undefined>) {
 }
 
 export default function FindRoomPage() {
+  return (
+    <PlanGate feature="findRoom">
+      <FindRoom />
+    </PlanGate>
+  );
+}
+
+function FindRoom() {
   const [draft, setDraft] = useState<Filters>(EMPTY); // what's typed
   const [filters, setFilters] = useState<Filters>(EMPTY); // what's searched
   const [near, setNear] = useState<{ lat: number; lng: number } | null>(null);

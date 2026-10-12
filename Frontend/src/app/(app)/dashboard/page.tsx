@@ -21,6 +21,7 @@ import { FormMessage } from "@/components/ui/FormMessage";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { StatCard } from "@/components/ui/StatCard";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { PLAN_NAMES } from "@/lib/plans";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -70,9 +71,9 @@ export default function DashboardPage() {
 
         <Card className="p-6 rounded-3xl flex flex-col">
           <div className="flex items-center justify-between mb-5">
-            <h2 className="font-semibold">Your plan usage</h2>
+            <h2 className="font-semibold">Your plan</h2>
             <span className="text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-              {me?.plan ?? "free"}
+              {PLAN_NAMES[me?.plan ?? "basic"]}
             </span>
           </div>
           <div className="flex items-baseline justify-between mb-2 text-sm">
@@ -89,12 +90,12 @@ export default function DashboardPage() {
               up to <strong className="text-foreground">{me?.max_members_per_room ?? 4}</strong>
             </span>
           </div>
-          {me?.plan !== "paid" && (
+          {me?.plan !== "premium" && (
             <Link
-              href="/contact"
+              href="/plans"
               className="mt-auto w-full h-9 rounded-full border border-card-border text-sm font-medium inline-flex items-center justify-center gap-1.5 hover:bg-foreground/5"
             >
-              <Sparkles className="h-4 w-4" /> Upgrade for bigger rooms
+              <Sparkles className="h-4 w-4" /> {me?.plan === "standard" ? "Go Premium" : "See plans"}
             </Link>
           )}
         </Card>

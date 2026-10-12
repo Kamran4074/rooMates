@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, PiggyBank } from "lucide-react";
+import { ArrowRight, PiggyBank, Lock } from "lucide-react";
 import { rupees } from "@/lib/format";
 import type { Fund } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
@@ -7,7 +7,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 
 // Room-page teaser for the newest fund. `undefined` = still loading (render
 // nothing), `null` = the room has no fund yet.
-export function RoomFundCard({ roomId, fund }: { roomId: string; fund: Fund | null | undefined }) {
+export function RoomFundCard({ roomId, fund, locked = false, isAdmin = false }: { roomId: string; fund: Fund | null | undefined; locked?: boolean; isAdmin?: boolean }) {
   if (fund === undefined) return null;
   const href = `/rooms/${roomId}/fund`;
 
@@ -16,7 +16,21 @@ export function RoomFundCard({ roomId, fund }: { roomId: string; fund: Fund | nu
       <h2 className="font-semibold flex items-center gap-2 mb-1">
         <PiggyBank className="h-4 w-4" /> Room fund
       </h2>
-      {fund === null ? (
+      {fund === null && locked ? (
+        <>
+          <p className="text-xs text-foreground/50 mb-3">Collect money upfront and track who has paid.</p>
+          <p className="text-sm text-foreground/60 flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5" /> On the Standard plan and above.
+          </p>
+          {isAdmin ? (
+            <Link href="/plans" className="mt-2 text-sm text-primary font-medium inline-flex items-center gap-1">
+              See plans <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          ) : (
+            <p className="mt-1 text-xs text-foreground/50">Ask the room admin to upgrade.</p>
+          )}
+        </>
+      ) : fund === null ? (
         <>
           <p className="text-xs text-foreground/50 mb-4">Collect money upfront and track who has paid.</p>
           <Link href={href} className="text-sm text-primary font-medium inline-flex items-center gap-1">

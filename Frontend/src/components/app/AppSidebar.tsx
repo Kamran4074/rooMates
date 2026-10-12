@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Settings, Plus, LogIn, Receipt, History, Search, Megaphone, Inbox, Bell } from "lucide-react";
+import { LayoutDashboard, Settings, Plus, LogIn, Receipt, History, Search, Megaphone, Inbox, Bell, Lock, Sparkles } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
 import { useRoomsStore } from "@/store/roomsStore";
@@ -10,12 +10,16 @@ import { useRoomModal } from "@/store/roomModalStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
 import { useJoinRequestsStore } from "@/store/joinRequestsStore";
+import { usePlanStore } from "@/store/planStore";
 import { NavLink } from "./NavLink";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const rooms = useRoomsStore((s) => s.rooms);
   const showModal = useRoomModal((s) => s.show);
+  // Find a room is on Standard and up: shown with a lock on Basic (the page explains).
+  const findRoomLocked = usePlanStore((s) => s.mine !== null && !s.mine.features.findRoom);
+  const lock = findRoomLocked && <Lock className="h-3.5 w-3.5 ml-auto text-foreground/40" aria-label="Upgrade to unlock" />;
   // Things waiting for me (payments, join requests) + feed events I haven't seen.
   const badge =
     useApprovalsStore((s) => s.items.length) + useJoinRequestsStore((s) => s.toApprove.length) + useNotificationsStore((s) => s.unread);
@@ -53,9 +57,11 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         <span className="text-xs font-semibold uppercase tracking-wider text-foreground/45 px-3 mb-1">Find roommates</span>
         <NavLink href="/listings" active={pathname === "/listings" || (pathname.startsWith("/listings/") && !pathname.endsWith("/edit"))}>
           <Search className="h-4 w-4" /> Find a room
+          {lock}
         </NavLink>
         <NavLink href="/my-listings" active={pathname === "/my-listings" || pathname.endsWith("/edit") || pathname === "/listings/new"}>
           <Megaphone className="h-4 w-4" /> My listings
+          {lock}
         </NavLink>
         <NavLink href="/requests" active={pathname === "/requests"}>
           <Inbox className="h-4 w-4" /> Requests
@@ -89,6 +95,9 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <div className="mt-auto flex flex-col gap-1">
+        <NavLink href="/plans" active={pathname === "/plans"}>
+          <Sparkles className="h-4 w-4" /> Plans
+        </NavLink>
         <NavLink href="/settings" active={pathname === "/settings"}>
           <Settings className="h-4 w-4" /> Settings
         </NavLink>

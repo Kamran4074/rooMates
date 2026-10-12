@@ -1,4 +1,4 @@
-import { pool } from "./db";
+import { adminPool, pool } from "./db";
 import { logger } from "./logger";
 
 // otp_codes and refresh_tokens only ever grow: every sign-in, refresh and
@@ -23,10 +23,30 @@ export async function deleteStaleAuthRows() {
   }
 }
 
+// A paid plan bought for a month or a year ends on plan_expires_at: back to
+// Basic limits. Rooms and data stay; only what Basic doesn't allow is locked
+// (new funds, bill sections, Find a room) and rooms can't grow past 4.
+export async function expirePlans() {
+  const { rows } = await adminPool.query<{ id: string }>(
+    `UPDATE organizations o
+     SET plan = 'basic', max_rooms = p.max_rooms, max_members_per_room = p.max_members_per_room, plan_expires_at = NULL
+     FROM plan_catalog p
+     WHERE p.id = 'basic' AND o.plan_expires_at <= now()
+     RETURNING o.id`
+  );
+  if (rows.length) logger.info("Housekeeping: plans expired, moved to basic", { organizations: rows.map((r) => r.id) });
+  return rows.length;
+}
+
+const HOUR = 60 * 60 * 1000;
+
 export function scheduleHousekeeping() {
-  const run = () =>
-    deleteStaleAuthRows().catch((err) => logger.warn("Housekeeping failed", { error: (err as Error).message }));
-  run();
-  // unref: this timer alone never keeps the process alive (graceful shutdown still works).
-  setInterval(run, DAY).unref();
+  const warn = (err: unknown) => logger.warn("Housekeeping failed", { error: (err as Error).message });
+  const daily = () => deleteStaleAuthRows().catch(warn);
+  const hourly = () => expirePlans().catch(warn);
+  daily();
+  hourly();
+  // unref: these timers alone never keep the process alive (graceful shutdown still works).
+  setInterval(daily, DAY).unref();
+  setInterval(hourly, HOUR).unref();
 }

@@ -16,6 +16,7 @@ export const site = {
   ],
   nav: [
     { href: "/#features", label: "Features" },
+    { href: "/pricing", label: "Pricing" },
     { href: "/about", label: "About" },
     { href: "/blog", label: "Blog" },
     { href: "/contact", label: "Contact" },

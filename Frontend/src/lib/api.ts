@@ -46,6 +46,11 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Public reads (no sign-in), e.g. the price list.
+export async function apiGet<T>(path: string): Promise<T> {
+  return handleResponse<T>(await fetch(`${API_URL}${path}`));
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",

@@ -1,7 +1,10 @@
 import { PoolClient } from "pg";
 import { adminPool, withAdminTransaction } from "../../config/db";
 import { logger } from "../../config/logger";
-import { Plan, PLAN_LIMITS } from "../../config/plans";
+import { BILLING_MONTHS, BillingCycle, Plan } from "../../config/plans";
+import { listPlans, PlanRow, toPlanInfo } from "../plans/plans.repository";
+import { toPaise } from "../../utils/money";
+import type { PlanCatalogInput } from "./admin.schema";
 import { AppError } from "../../middlewares/errorHandler";
 import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
 import { computeRoomBalances } from "../expenses/expenses.service";
@@ -18,7 +21,7 @@ async function audit(
   client: PoolClient,
   adminId: string,
   action: string,
-  entityType: "user" | "listing" | "report",
+  entityType: "user" | "listing" | "report" | "pricing",
   entityId: string,
   details?: Record<string, unknown>
 ) {
@@ -195,7 +198,7 @@ export async function getUser(userId: string) {
       `SELECT u.id, u.name, u.email, u.phone, u.picture, u.role, u.suspended_at, u.deleted_at,
               u.created_at, u.last_active_at, u.email_verified, u.onboarding_completed,
               (u.google_id IS NOT NULL) AS has_google, (u.password_hash IS NOT NULL) AS has_password,
-              o.plan, o.max_rooms, o.max_members_per_room,
+              o.plan, o.max_rooms, o.max_members_per_room, o.plan_expires_at,
               (SELECT COUNT(*)::int FROM refresh_tokens rt
                 WHERE rt.user_id = u.id AND rt.revoked_at IS NULL AND rt.expires_at > now()) AS active_sessions
        FROM users u JOIN organizations o ON o.id = u.organization_id
@@ -337,9 +340,10 @@ export async function setSuspended(adminId: string, userId: string, suspend: boo
   });
 }
 
-// Until payments are wired up, an upgrade is done here by the super admin.
+// The super admin can also set a plan by hand (a comp, a fix): it has no end
+// date. Paid upgrades normally go through upgrade requests below.
 // The plan belongs to the user's organization: it sets how many rooms they
-// can create and how many people fit in each room they own.
+// can create, how many people fit in each room they own, and the features.
 export async function setPlan(adminId: string, userId: string, plan: Plan) {
   return withAdminTransaction(async (client) => {
     const { rows } = await client.query<{ organization_id: string; plan: Plan; deleted_at: Date | null }>(
@@ -352,15 +356,146 @@ export async function setPlan(adminId: string, userId: string, plan: Plan) {
     if (!user || user.deleted_at) throw new AppError("User not found", 404);
     if (user.plan === plan) throw new AppError(`Already on the ${plan} plan`, 409);
 
-    const limits = PLAN_LIMITS[plan];
-    await client.query("UPDATE organizations SET plan = $2, max_rooms = $3, max_members_per_room = $4 WHERE id = $1", [
-      user.organization_id,
-      plan,
-      limits.maxRooms,
-      limits.maxMembersPerRoom,
-    ]);
+    const updated = await client.query<{ max_rooms: number; max_members_per_room: number }>(
+      `UPDATE organizations o
+       SET plan = p.id, max_rooms = p.max_rooms, max_members_per_room = p.max_members_per_room, plan_expires_at = NULL
+       FROM plan_catalog p
+       WHERE o.id = $1 AND p.id = $2
+       RETURNING o.max_rooms, o.max_members_per_room`,
+      [user.organization_id, plan]
+    );
     await audit(client, adminId, "CHANGED_PLAN", "user", userId, { from: user.plan, to: plan });
-    return { id: userId, plan, maxRooms: limits.maxRooms, maxMembersPerRoom: limits.maxMembersPerRoom };
+    const limits = updated.rows[0];
+    return { id: userId, plan, maxRooms: limits.max_rooms, maxMembersPerRoom: limits.max_members_per_room };
+  });
+}
+
+// ---------------- Pricing ----------------
+
+// The price list with who changed each plan last and how many accounts are on it.
+export async function listPricing() {
+  const [plans, meta] = await Promise.all([
+    listPlans(adminPool),
+    adminPool.query<{ id: string; updated_at: Date; updated_by_name: string | null; accounts: number }>(
+      `SELECT p.id, p.updated_at, u.name AS updated_by_name,
+              (SELECT COUNT(*)::int FROM organizations o WHERE o.plan = p.id) AS accounts
+       FROM plan_catalog p LEFT JOIN users u ON u.id = p.updated_by`
+    ),
+  ]);
+  const byId = new Map(meta.rows.map((m) => [m.id, m]));
+  return plans.map((p) => ({ ...p, updatedAt: byId.get(p.id)!.updated_at, updatedByName: byId.get(p.id)!.updated_by_name, accounts: byId.get(p.id)!.accounts }));
+}
+
+// Changing a plan's limits applies to everyone on it straight away (their
+// organization rows are updated in the same transaction). People already
+// over a lowered limit keep what they have; they just can't add more.
+// Upgrade requests already sent keep the price they were quoted.
+export async function updatePricing(adminId: string, id: Plan, input: PlanCatalogInput) {
+  const monthly = toPaise(input.priceMonthly);
+  const yearly = toPaise(input.priceYearly);
+  if (id === "basic" && (monthly !== 0 || yearly !== 0)) throw new AppError("Basic is the free plan - its price stays 0", 400);
+  if (id !== "basic" && (monthly <= 0 || yearly <= 0)) throw new AppError("A paid plan needs a monthly and a yearly price", 400);
+
+  return withAdminTransaction(async (client) => {
+    const before = await client.query<PlanRow>("SELECT * FROM plan_catalog WHERE id = $1 FOR UPDATE", [id]);
+    if (!before.rows[0]) throw new AppError("Plan not found", 404);
+    const { rows } = await client.query<PlanRow>(
+      `UPDATE plan_catalog SET name = $2, tagline = $3, price_monthly_paise = $4, price_yearly_paise = $5,
+              max_rooms = $6, max_members_per_room = $7, max_listings = $8, unlimited = $9,
+              feature_room_fund = $10, feature_bill_sections = $11, feature_find_room = $12, support = $13,
+              updated_at = now(), updated_by = $14
+       WHERE id = $1 RETURNING *`,
+      [
+        id, input.name, input.tagline, monthly, yearly, input.maxRooms, input.maxMembersPerRoom, input.maxListings, input.unlimited,
+        input.features.roomFund, input.features.billSections, input.features.findRoom, input.support, adminId,
+      ]
+    );
+    const accounts = await client.query(
+      "UPDATE organizations SET max_rooms = $2, max_members_per_room = $3 WHERE plan = $1 AND (max_rooms, max_members_per_room) IS DISTINCT FROM ($2, $3)",
+      [id, input.maxRooms, input.maxMembersPerRoom]
+    );
+
+    const old = toPlanInfo(before.rows[0]);
+    const now = toPlanInfo(rows[0]);
+    const changes = Object.fromEntries(
+      (Object.keys(now) as (keyof typeof now)[])
+        .filter((k) => JSON.stringify(old[k]) !== JSON.stringify(now[k]))
+        .map((k) => [k, { from: old[k], to: now[k] }])
+    );
+    // Audit entries point at a uuid; pricing has none, so it's filed under the admin like the CSV export.
+    await audit(client, adminId, "CHANGED_PRICING", "pricing", adminId, { plan: id, changes, accountsUpdated: accounts.rowCount });
+    return now;
+  });
+}
+
+// ---------------- Upgrade requests ----------------
+
+// Waiting ones oldest first (first asked, first called); decided ones newest first.
+export async function listUpgradeRequests(status: string | undefined, page: PageParams) {
+  const { limit, offset } = toLimitOffset(page);
+  const { rows } = await adminPool.query(
+    `SELECT r.id, r.user_id, u.name, u.email, u.picture, o.plan AS current_plan, o.plan_expires_at,
+            r.plan, r.billing_cycle, r.amount_paise, r.phone, r.note, r.status, r.created_at, r.decided_at, r.admin_note,
+            d.name AS decided_by_name, COUNT(*) OVER() AS total_count
+     FROM plan_upgrade_requests r
+     JOIN users u ON u.id = r.user_id
+     JOIN organizations o ON o.id = u.organization_id
+     LEFT JOIN users d ON d.id = r.decided_by
+     WHERE ($1::text IS NULL OR r.status = $1)
+     ORDER BY CASE WHEN r.status = 'pending' THEN r.created_at END ASC, r.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [status ?? null, limit, offset]
+  );
+  return paginate(rows, page);
+}
+
+// Approve = "they paid": the plan starts now, or - renewing the same plan
+// before it ends - is extended from its current end date.
+export async function decideUpgradeRequest(adminId: string, requestId: string, approve: boolean, note?: string) {
+  return withAdminTransaction(async (client) => {
+    const { rows } = await client.query<{
+      user_id: string;
+      organization_id: string;
+      plan: Plan;
+      billing_cycle: BillingCycle;
+      amount_paise: number;
+      status: string;
+    }>(
+      `SELECT r.user_id, u.organization_id, r.plan, r.billing_cycle, r.amount_paise, r.status
+       FROM plan_upgrade_requests r JOIN users u ON u.id = r.user_id
+       WHERE r.id = $1 FOR UPDATE OF r`,
+      [requestId]
+    );
+    const request = rows[0];
+    if (!request) throw new AppError("Request not found", 404);
+    if (request.status !== "pending") throw new AppError(`This request was already ${request.status}`, 409);
+
+    let expiresAt: Date | null = null;
+    if (approve) {
+      const updated = await client.query<{ plan_expires_at: Date }>(
+        `UPDATE organizations o
+         SET plan = p.id, max_rooms = p.max_rooms, max_members_per_room = p.max_members_per_room,
+             plan_expires_at = CASE WHEN o.plan = p.id AND o.plan_expires_at > now() THEN o.plan_expires_at ELSE now() END
+                               + make_interval(months => $3)
+         FROM plan_catalog p
+         WHERE o.id = $1 AND p.id = $2
+         RETURNING o.plan_expires_at`,
+        [request.organization_id, request.plan, BILLING_MONTHS[request.billing_cycle]]
+      );
+      expiresAt = updated.rows[0].plan_expires_at;
+    }
+    await client.query(
+      "UPDATE plan_upgrade_requests SET status = $2, decided_by = $3, decided_at = now(), admin_note = $4 WHERE id = $1",
+      [requestId, approve ? "approved" : "rejected", adminId, note || null]
+    );
+    await audit(client, adminId, approve ? "APPROVED_UPGRADE" : "REJECTED_UPGRADE", "user", request.user_id, {
+      requestId,
+      plan: request.plan,
+      billingCycle: request.billing_cycle,
+      amountPaise: request.amount_paise,
+      ...(note && { note }),
+    });
+    return { id: requestId, status: approve ? ("approved" as const) : ("rejected" as const), planExpiresAt: expiresAt };
   });
 }
 

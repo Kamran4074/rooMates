@@ -5,6 +5,10 @@ import {
   listingsQuery,
   optionalReasonSchema,
   planSchema,
+  upgradeRequestsQuery,
+  decisionNoteSchema,
+  planCatalogSchema,
+  planIdParam,
   reasonSchema,
   reportsQuery,
   resolveReportSchema,
@@ -73,6 +77,32 @@ export async function handleUnsuspend(req: Request, res: Response) {
 export async function handleSetPlan(req: Request, res: Response) {
   const { plan } = planSchema.parse(req.body);
   sendSuccess(res, await admin.setPlan(req.auth!.sub, id(req), plan), { message: `Moved to the ${plan} plan` });
+}
+
+export async function handlePricing(_req: Request, res: Response) {
+  sendSuccess(res, await admin.listPricing());
+}
+
+export async function handleUpdatePricing(req: Request, res: Response) {
+  const plan = planIdParam.parse(req.params.plan);
+  const input = planCatalogSchema.parse(req.body);
+  sendSuccess(res, await admin.updatePricing(req.auth!.sub, plan, input), { message: "Pricing saved" });
+}
+
+export async function handleUpgradeRequests(req: Request, res: Response) {
+  const { status, page, limit } = upgradeRequestsQuery.parse(req.query);
+  const { data, pagination } = await admin.listUpgradeRequests(status, { page, limit });
+  sendSuccess(res, data, { pagination });
+}
+
+export async function handleApproveUpgrade(req: Request, res: Response) {
+  const { note } = decisionNoteSchema.parse(req.body ?? {});
+  sendSuccess(res, await admin.decideUpgradeRequest(req.auth!.sub, id(req), true, note), { message: "Plan activated" });
+}
+
+export async function handleRejectUpgrade(req: Request, res: Response) {
+  const { note } = decisionNoteSchema.parse(req.body ?? {});
+  sendSuccess(res, await admin.decideUpgradeRequest(req.auth!.sub, id(req), false, note), { message: "Request declined" });
 }
 
 export async function handleListings(req: Request, res: Response) {

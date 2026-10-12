@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { uploadLimiter } from "../../middlewares/rateLimit";
+import { requireFeature } from "../../middlewares/planGate";
 import { authenticate } from "../../middlewares/authenticate";
 import * as c from "./listings.controller";
 
@@ -10,10 +11,13 @@ const router = Router();
 router.use(authenticate);
 
 // Fixed paths first, so "nearby"/"mine" aren't read as a :listingId.
-router.get("/", c.handleSearch);
-router.get("/nearby", c.handleNearby);
+// Browsing and listing rooms is part of Standard and up; managing what you
+// already posted keeps working on any plan.
+const findRoom = requireFeature("findRoom");
+router.get("/", findRoom, c.handleSearch);
+router.get("/nearby", findRoom, c.handleNearby);
 router.get("/mine", c.handleMine);
-router.post("/", c.handleCreate);
+router.post("/", findRoom, c.handleCreate);
 
 router.get("/:listingId", c.handleGet);
 router.patch("/:listingId", c.handleUpdate);

@@ -8,6 +8,7 @@ import { useRoomsStore } from "@/store/roomsStore";
 import { useApprovalsStore } from "@/store/approvalsStore";
 import { useNotificationsStore } from "@/store/notificationsStore";
 import { useJoinRequestsStore } from "@/store/joinRequestsStore";
+import { usePlanStore } from "@/store/planStore";
 import { useToastStore } from "@/store/toastStore";
 import { useRoomModal } from "@/store/roomModalStore";
 import { AppSidebar } from "@/components/app/AppSidebar";
@@ -30,6 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const loadApprovals = useApprovalsStore((s) => s.load);
   const loadNotifications = useNotificationsStore((s) => s.load);
   const loadJoinRequests = useJoinRequestsStore((s) => s.load);
+  const loadPlan = usePlanStore((s) => s.load);
   const modal = useRoomModal((s) => s.open);
   const closeModal = useRoomModal((s) => s.close);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -45,8 +47,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       loadApprovals();
       loadNotifications();
       loadJoinRequests();
+      loadPlan(); // an upgrade the admin approved shows up on the next page
     }
-  }, [ready, isAdmin, pathname, loadApprovals, loadNotifications, loadJoinRequests]);
+  }, [ready, isAdmin, pathname, loadApprovals, loadNotifications, loadJoinRequests, loadPlan]);
 
   // Live updates for members (the admin console doesn't need them).
   useLiveConnection(ready && !isAdmin);

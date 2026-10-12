@@ -6,6 +6,7 @@ import { toPaise } from "../../utils/money";
 import { ContributionInput, CreateFundInput, SpendInput } from "./funds.schema";
 import { settleFund, summariseFund } from "./funds.summary";
 import { getMemberIds } from "../rooms/rooms.repository";
+import { requireRoomFeature } from "../../middlewares/planGate";
 
 // Room fund ("kitty"): everyone pays a fixed amount to one collector upfront,
 // it's spent on shared things, and when it's closed the leftover is settled
@@ -178,6 +179,7 @@ export async function getFund(userId: string, roomId: string, fundId: string) {
 
 export async function createFund(userId: string, roomId: string, input: CreateFundInput) {
   return withUserContext(userId, async (client) => {
+    await requireRoomFeature(client, roomId, "roomFund");
     // A fund always applies to everyone in the room at the time it's opened:
     // nobody is left out of the per-person amount.
     const participantIds = await getMemberIds(client, roomId);

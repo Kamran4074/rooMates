@@ -22,6 +22,13 @@ router.post("/users/:id/suspend", c.handleSuspend);
 router.post("/users/:id/unsuspend", c.handleUnsuspend);
 router.post("/users/:id/plan", c.handleSetPlan);
 
+router.get("/pricing", c.handlePricing);
+router.patch("/pricing/:plan", c.handleUpdatePricing);
+
+router.get("/upgrade-requests", c.handleUpgradeRequests);
+router.post("/upgrade-requests/:id/approve", c.handleApproveUpgrade);
+router.post("/upgrade-requests/:id/reject", c.handleRejectUpgrade);
+
 router.get("/listings", c.handleListings);
 router.get("/listings/:id", c.handleListing);
 router.post("/listings/:id/approve", c.handleApprove);

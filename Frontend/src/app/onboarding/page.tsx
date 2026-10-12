@@ -17,8 +17,9 @@ import { PhoneField } from "@/components/ui/PhoneField";
 import { CreateRoomForm } from "@/components/rooms/CreateRoomForm";
 import { JoinRoomForm } from "@/components/rooms/JoinRoomForm";
 import { InviteShare } from "@/components/rooms/InviteShare";
+import { OnboardingPlanStep } from "@/components/plans/OnboardingPlanStep";
 
-const STEPS = ["Your profile", "Your first room", "Invite roommates"];
+const STEPS = ["Your profile", "Choose a plan", "Your first room", "Invite roommates"];
 
 type FirstRoom =
   | { mode: "created"; id: string; name: string; inviteCode: string }
@@ -72,7 +73,7 @@ export default function OnboardingPage() {
 
   function chooseRoom(room: FirstRoom) {
     setFirstRoom(room);
-    setStep(2);
+    setStep(3);
   }
 
   // Onboarding only counts as complete here, at the very end - a user who
@@ -114,7 +115,7 @@ export default function OnboardingPage() {
       </div>
 
       <main className="flex-1 flex justify-center px-4 py-12">
-        <div className="w-full max-w-lg">
+        <div className={`w-full ${step === 1 ? "max-w-5xl" : "max-w-lg"}`}>
           {step === 0 && (
             <>
               <StepHeading title={`Welcome${name ? `, ${name.split(" ")[0]}` : ""}!`} subtitle="Let's set up your account. This takes under a minute." />
@@ -130,6 +131,13 @@ export default function OnboardingPage() {
           )}
 
           {step === 1 && (
+            <>
+              <StepHeading title="Choose your plan" subtitle="Everyone starts on Basic, free. You can upgrade any time from Plans." />
+              <OnboardingPlanStep phone={phone} onBack={() => setStep(0)} onDone={() => setStep(2)} />
+            </>
+          )}
+
+          {step === 2 && (
             <>
               <StepHeading title="Set up your first room" subtitle="A room is one shared group — your flat, or a trip with friends." />
               <Card className="p-8 rounded-3xl">
@@ -150,7 +158,7 @@ export default function OnboardingPage() {
                 )}
               </Card>
               <div className="flex items-center justify-between mt-5">
-                <button onClick={() => setStep(0)} className="inline-flex items-center gap-1.5 text-sm text-foreground/60 hover:text-foreground">
+                <button onClick={() => setStep(1)} className="inline-flex items-center gap-1.5 text-sm text-foreground/60 hover:text-foreground">
                   <ArrowLeft className="h-4 w-4" /> Back
                 </button>
                 <button onClick={() => chooseRoom({ mode: "skipped" })} className="text-sm font-medium text-primary">
@@ -160,7 +168,7 @@ export default function OnboardingPage() {
             </>
           )}
 
-          {step === 2 && firstRoom && (
+          {step === 3 && firstRoom && (
             <>
               {firstRoom.mode === "created" ? (
                 <StepHeading title="Invite your roommates" subtitle={`Share this code so others can join "${firstRoom.name}".`} />

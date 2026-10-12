@@ -7,8 +7,17 @@ import { createListing } from "@/services/listingsApi";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { ListingForm } from "@/components/listings/ListingForm";
+import { PlanGate } from "@/components/plans/PlanGate";
 
 export default function NewListingPage() {
+  return (
+    <PlanGate feature="findRoom">
+      <NewListing />
+    </PlanGate>
+  );
+}
+
+function NewListing() {
   const router = useRouter();
   return (
     <>

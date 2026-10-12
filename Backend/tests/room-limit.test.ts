@@ -1,6 +1,6 @@
 import { api, cleanup, createUser, joinRoom, startServer, TestUser } from "./helpers";
 
-// A room's size comes from its owner's plan: free = 4 people (admin included).
+// A room's size comes from its owner's plan: Basic = 4 people (admin included).
 // The database enforces it on both the request and the approval.
 
 let owner: TestUser, superAdmin: TestUser;
@@ -9,21 +9,21 @@ const room = async () => (await api(owner, "GET", `/api/rooms/${roomId}`)).body.
 
 beforeAll(async () => {
   await startServer();
-  [owner, superAdmin] = await Promise.all([createUser(), createUser({ role: "super_admin" })]);
+  [owner, superAdmin] = await Promise.all([createUser({ plan: "basic" }), createUser({ role: "super_admin" })]);
   const created = await api(owner, "POST", "/api/rooms", { name: "Tiny flat", type: "roommates" });
   roomId = created.body.data.id;
   inviteCode = created.body.data.inviteCode;
 });
 afterAll(cleanup);
 
-describe("free plan: 4 people per room", () => {
+describe("basic plan: 4 people per room", () => {
   it("takes three more people, then turns the next one away with a clear message", async () => {
     for (let i = 0; i < 3; i++) expect((await joinRoom(await createUser(), inviteCode)).status).toBe(200);
-    expect(await room()).toEqual(expect.objectContaining({ member_count: 4, max_members: 4, plan: "free" }));
+    expect(await room()).toEqual(expect.objectContaining({ member_count: 4, max_members: 4, plan: "basic" }));
 
     const fifth = await api(await createUser(), "POST", "/api/rooms/join", { inviteCode });
     expect(fifth.status).toBe(409);
-    expect(fifth.body.message).toMatch(/This room is full: 4 of 4 people on the free plan/);
+    expect(fifth.body.message).toMatch(/This room is full: 4 of 4 people on the basic plan/);
   });
 
   it("requests made while there was room still can't be approved past the limit", async () => {
@@ -43,23 +43,23 @@ describe("free plan: 4 people per room", () => {
 
 describe("upgrading", () => {
   it("only the super admin can change a plan", async () => {
-    expect((await api(owner, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "paid" })).status).toBe(403);
+    expect((await api(owner, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "standard" })).status).toBe(403);
   });
 
-  it("paid lets the room grow; moving back to free keeps everyone but blocks new joins", async () => {
-    const up = await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "paid" });
+  it("standard lets the room grow; moving back to basic keeps everyone but blocks new joins", async () => {
+    const up = await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "standard" });
     expect(up.status).toBe(200);
-    expect(up.body.data).toEqual(expect.objectContaining({ plan: "paid", maxMembersPerRoom: 20 }));
-    expect((await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "paid" })).status).toBe(409);
+    expect(up.body.data).toEqual(expect.objectContaining({ plan: "standard", maxMembersPerRoom: 10 }));
+    expect((await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "standard" })).status).toBe(409);
 
     expect((await joinRoom(await createUser(), inviteCode)).status).toBe(200);
-    expect(await room()).toEqual(expect.objectContaining({ member_count: 5, max_members: 20, plan: "paid" }));
+    expect(await room()).toEqual(expect.objectContaining({ member_count: 5, max_members: 10, plan: "standard" }));
 
-    await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "free" });
+    await api(superAdmin, "POST", `/api/admin/users/${owner.id}/plan`, { plan: "basic" });
     expect(await room()).toEqual(expect.objectContaining({ member_count: 5, max_members: 4 })); // nobody removed
     expect((await api(await createUser(), "POST", "/api/rooms/join", { inviteCode })).status).toBe(409);
 
     const me = await api(owner, "GET", "/api/users/me");
-    expect(me.body.data).toEqual(expect.objectContaining({ plan: "free", max_members_per_room: 4 }));
+    expect(me.body.data).toEqual(expect.objectContaining({ plan: "basic", max_members_per_room: 4 }));
   });
 });
