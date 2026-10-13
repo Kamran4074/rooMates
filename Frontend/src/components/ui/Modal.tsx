@@ -84,14 +84,14 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} aria-hidden="true" />
       <div
         ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card rounded-3xl shadow-2xl p-5 sm:p-7 outline-none"
+        className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card rounded-3xl shadow-2xl p-5 sm:p-7 outline-none animate-dialog-in"
       >
         <div className="flex items-center justify-between mb-6">
           <h2 id={titleId} className="text-xl font-semibold">

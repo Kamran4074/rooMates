@@ -24,7 +24,12 @@ export function Toaster() {
           </>
         );
         return (
-          <div key={t.id} className="pointer-events-auto flex items-start gap-3 rounded-2xl border border-card-border bg-card shadow-2xl px-4 py-3">
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-start gap-3 rounded-2xl border border-card-border bg-card shadow-2xl px-4 py-3 ${
+              t.leaving ? "animate-toast-out" : "animate-toast-in"
+            }`}
+          >
             {t.href ? (
               <Link href={t.href} onClick={() => dismiss(t.id)} className="flex items-start gap-3 flex-1 min-w-0 hover:text-primary">
                 {body}

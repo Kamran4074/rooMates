@@ -7,6 +7,8 @@ export interface Toast {
   message: string;
   /** Optional link the toast opens. */
   href?: string;
+  /** Playing its exit animation; removed a moment later. */
+  leaving?: boolean;
 }
 
 interface ToastState {
@@ -16,6 +18,8 @@ interface ToastState {
 }
 
 const VISIBLE_MS = 6_000;
+/** Matches animate-toast-out in globals.css. */
+const EXIT_MS = 180;
 const MAX_VISIBLE = 3;
 let nextId = 1;
 
@@ -26,5 +30,10 @@ export const useToastStore = create<ToastState>()((set, get) => ({
     set((s) => ({ toasts: [...s.toasts, { id, message, href }].slice(-MAX_VISIBLE) }));
     setTimeout(() => get().dismiss(id), VISIBLE_MS);
   },
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  // Fade out first, then remove.
+  dismiss: (id) => {
+    if (!get().toasts.some((t) => t.id === id && !t.leaving)) return;
+    set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) }));
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), EXIT_MS);
+  },
 }));
