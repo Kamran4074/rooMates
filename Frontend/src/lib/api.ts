@@ -62,8 +62,9 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 // Access tokens are short-lived (15 min) on purpose. Rather than make every
 // page worry about expiry, a 401 on any authenticated call triggers exactly
-// one refresh attempt here, using the long-lived refresh token, before the
-// call is retried. Concurrent 401s share a single in-flight refresh instead
+// one refresh attempt here, using the refresh token, before the call is
+// retried. Once the session's 24h limit has passed the refresh gets a 401 and
+// the user is signed out. Concurrent 401s share a single in-flight refresh instead
 // of each firing their own.
 let refreshPromise: Promise<boolean> | null = null;
 

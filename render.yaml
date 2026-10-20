@@ -36,8 +36,8 @@ services:
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRES_IN
         value: 15m
-      - key: REFRESH_TOKEN_EXPIRES_DAYS
-        value: "30"
+      - key: SESSION_MAX_AGE_HOURS
+        value: "24"
       - key: EMAIL_FROM_NAME
         value: RooMates
       - key: EMAIL_FROM_ADDRESS

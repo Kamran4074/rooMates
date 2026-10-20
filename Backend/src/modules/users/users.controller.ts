@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendSuccess } from "../../utils/response";
-import { profileSchema } from "./users.schema";
-import { completeOnboarding, updateProfile, getMe } from "./users.service";
+import { deleteAccountSchema, profileSchema } from "./users.schema";
+import { completeOnboarding, deleteOwnAccount, updateProfile, getMe } from "./users.service";
 
 export async function handleCompleteOnboarding(req: Request, res: Response) {
   sendSuccess(res, await completeOnboarding(req.auth!.sub, profileSchema.parse(req.body)));
@@ -13,4 +13,8 @@ export async function handleUpdateProfile(req: Request, res: Response) {
 
 export async function handleGetMe(req: Request, res: Response) {
   sendSuccess(res, await getMe(req.auth!.sub));
+}
+
+export async function handleDeleteAccount(req: Request, res: Response) {
+  sendSuccess(res, await deleteOwnAccount(req.auth!.sub, deleteAccountSchema.parse(req.body)), { message: "Account deleted" });
 }

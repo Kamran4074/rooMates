@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { StatusPage } from "@/components/StatusPage";
 import { Button } from "@/components/ui/Button";
@@ -9,9 +10,10 @@ import { Button } from "@/components/ui/Button";
 // API errors are handled on each page; this is for bugs.
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    // Visible in the browser console while developing; a monitoring tool
-    // (e.g. Sentry) would pick it up here in production.
+    // Rendering crashes are caught here before they'd reach Sentry's global
+    // handler, so report them explicitly (a no-op when Sentry is off).
     console.error(error);
+    Sentry.captureException(error);
   }, [error]);
 
   return (

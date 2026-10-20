@@ -24,7 +24,9 @@ const envSchema = z.object({
   APP_DATABASE_URL: z.string().min(1, "APP_DATABASE_URL is required"),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default("15m"),
-  REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().default(30),
+  // Absolute: counted from sign-in, NOT extended by refreshing. After this the
+  // user has to sign in again however active they've been.
+  SESSION_MAX_AGE_HOURS: z.coerce.number().positive().default(24),
   GOOGLE_CLIENT_ID: z.string().optional(),
   BREVO_API_KEY: z.string().optional(),
   EMAIL_FROM_NAME: z.string().default("RooMates"),

@@ -1,6 +1,9 @@
-import { withUserContext } from "../../config/db";
+import bcrypt from "bcryptjs";
+import { withAdminTransaction, withUserContext } from "../../config/db";
+import { logger } from "../../config/logger";
 import { AppError } from "../../middlewares/errorHandler";
-import { ProfileInput } from "./users.schema";
+import { anonymiseAccount } from "./accountDeletion";
+import { DeleteAccountInput, ProfileInput } from "./users.schema";
 
 const PROFILE_COLUMNS = "id, email, name, phone, picture, onboarding_completed";
 
@@ -36,6 +39,7 @@ export async function getMe(userId: string) {
   return withUserContext(userId, async (client) => {
     const result = await client.query(
       `SELECT u.id, u.email, u.name, u.phone, u.picture, u.onboarding_completed,
+              u.password_hash IS NOT NULL AS has_password,
               o.plan, o.plan_expires_at, o.max_rooms, o.max_members_per_room, count_org_rooms(o.id) AS room_count
        FROM users u
        JOIN organizations o ON o.id = u.organization_id
@@ -43,5 +47,31 @@ export async function getMe(userId: string) {
       [userId]
     );
     return result.rows[0];
+  });
+}
+
+// The user's own "Delete account" - same rules as the super admin's delete
+// (anonymiseAccount). Accounts with a password must re-enter it; Google-only
+// accounts have none, so typing DELETE is their confirmation. Logged in
+// audit_logs with the user as the actor, so support can see who deleted it.
+export async function deleteOwnAccount(userId: string, input: DeleteAccountInput) {
+  return withAdminTransaction(async (client) => {
+    const { rows } = await client.query<{ password_hash: string | null }>(
+      "SELECT password_hash FROM users WHERE id = $1",
+      [userId]
+    );
+    const hash = rows[0]?.password_hash;
+    if (hash && !(input.password && (await bcrypt.compare(input.password, hash)))) {
+      // 400, not 401: a 401 would make the app think the session expired.
+      throw new AppError("That password isn't right", 400);
+    }
+
+    const summary = await anonymiseAccount(client, userId, true);
+    await client.query(
+      "INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, details) VALUES ($1, $2, 'user', $1, $3)",
+      [userId, "DELETED_OWN_ACCOUNT", JSON.stringify(summary)]
+    );
+    logger.info("Account deleted by its owner", { userId });
+    return { deleted: true };
   });
 }

@@ -13,6 +13,7 @@ import { FormMessage } from "@/components/ui/FormMessage";
 import { Avatar } from "@/components/ui/Avatar";
 import { PhoneField, toLocalDigits } from "@/components/ui/PhoneField";
 import { LoadingState } from "@/components/ui/Skeleton";
+import { DeleteAccountCard } from "@/components/settings/DeleteAccountCard";
 
 export default function SettingsPage() {
   const { data: me, error } = useApiQuery<Me>("/api/users/me");
@@ -20,7 +21,12 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Manage your profile." />
-      {me ? <ProfileForm me={me} /> : error ? <FormMessage error={error} /> : <LoadingState rows={3} />}
+      {me ? (
+        <>
+          <ProfileForm me={me} />
+          <DeleteAccountCard hasPassword={me.has_password} />
+        </>
+      ) : error ? <FormMessage error={error} /> : <LoadingState rows={3} />}
     </>
   );
 }

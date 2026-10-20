@@ -255,10 +255,13 @@ export function issueAccessToken(user: AuthenticatedUser): string {
 // The raw refresh token is only ever returned to the client, never stored -
 // only its hash lives in the DB, the same trust model as a password. This
 // means a leaked database backup can't be used to mint new sessions.
-export async function issueRefreshToken(userId: string): Promise<string> {
+//
+// expiresAt is the session's hard deadline: set once at sign-in, then copied
+// onto every rotated token (see rotateRefreshToken). Giving each rotated
+// token a fresh lifetime instead would make an active session never expire.
+export async function issueRefreshToken(userId: string, expiresAt: Date = newSessionDeadline()): Promise<string> {
   const rawToken = crypto.randomBytes(40).toString("hex");
   const tokenHash = sha256(rawToken);
-  const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
 
   await pool.query(
     "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
@@ -293,21 +296,37 @@ export async function assertActiveAccount(userId: string): Promise<PlatformRole>
   });
 }
 
-export async function issueTokenPair(user: AuthenticatedUser): Promise<TokenPair & { role: PlatformRole }> {
+function newSessionDeadline(): Date {
+  return new Date(Date.now() + env.SESSION_MAX_AGE_HOURS * 60 * 60 * 1000);
+}
+
+export async function issueTokenPair(
+  user: AuthenticatedUser,
+  sessionExpiresAt?: Date
+): Promise<TokenPair & { role: PlatformRole }> {
   const role = await assertActiveAccount(user.userId);
-  return { accessToken: issueAccessToken(user), refreshToken: await issueRefreshToken(user.userId), role };
+  return {
+    accessToken: issueAccessToken(user),
+    refreshToken: await issueRefreshToken(user.userId, sessionExpiresAt),
+    role,
+  };
 }
 
 // Rotation: the presented refresh token is revoked and a brand new one issued
 // alongside the new access token, rather than reusing the same refresh token
 // indefinitely. Check-and-revoke is ONE conditional UPDATE, so two concurrent
 // requests with the same token can't both win - only one row update succeeds.
+//
+// The new token inherits the old one's deadline, so the session ends
+// SESSION_MAX_AGE_HOURS after sign-in no matter how often it's refreshed.
+// The LEAST() also caps tokens issued before this rule (30-day sliding) - and
+// any left over if the setting is lowered - at the current maximum.
 export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & { user: AuthenticatedUser }> {
-  const revoked = await pool.query<{ user_id: string }>(
+  const revoked = await pool.query<{ user_id: string; session_expires_at: Date }>(
     `UPDATE refresh_tokens SET revoked_at = now()
      WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
-     RETURNING user_id`,
-    [sha256(rawToken)]
+     RETURNING user_id, LEAST(expires_at, now() + $2::float8 * interval '1 hour') AS session_expires_at`,
+    [sha256(rawToken), env.SESSION_MAX_AGE_HOURS]
   );
   const userId = revoked.rows[0]?.user_id;
   if (!userId) {
@@ -338,7 +357,7 @@ export async function rotateRefreshToken(rawToken: string): Promise<TokenPair & 
 
   // issueTokenPair re-checks suspension: the old token is already revoked
   // above, so a suspended user is fully signed out here.
-  const { role, ...tokens } = await issueTokenPair(user);
+  const { role, ...tokens } = await issueTokenPair(user, revoked.rows[0].session_expires_at);
   return { ...tokens, user: { ...user, role } };
 }
 

@@ -286,6 +286,8 @@ export interface Me {
   max_rooms: number;
   max_members_per_room: number;
   room_count: number;
+  /** False for Google-only accounts: deleting then needs no password. */
+  has_password: boolean;
 }
 
 // ---------------- Admin ----------------

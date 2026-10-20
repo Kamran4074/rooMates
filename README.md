@@ -37,6 +37,7 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - Email + password (OTP-verified email, forgot/reset via emailed code) or "Continue with Google"
 - Short-lived JWT access token + rotated, hashed refresh token
 - A unique Indian mobile number is required, to stop people farming free rooms with throwaway emails
+- **Delete account** from Settings: password (or typing DELETE for Google-only accounts) required; the account is anonymised under the same rules as the admin's delete, and refused while money is unsettled
 
 **Expense rooms**
 - Rooms for flatmates or groups for trips (whoever creates one is its admin), joined with an invite code that only the room admin can see or reset
@@ -319,7 +320,7 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 ## Authentication flow
 
 1. **Sign up** → account created unverified → 6-digit code emailed (stored hashed, 10-minute expiry, 5 attempts).
-2. **Verify** the code → the API issues an access token (15 min) + refresh token (30 days, stored as a SHA-256 hash).
+2. **Verify** the code → the API issues an access token (15 min) + refresh token (stored as a SHA-256 hash). The session lasts 24 hours from sign-in: rotated refresh tokens keep the original deadline, so using the app doesn't extend it.
 3. **Google:** the browser gets a Google access token; the API checks with Google that it was issued *to our client ID* (`aud`), that the email is verified, then links to an existing account with that email or creates one.
 4. Every request sends `Authorization: Bearer <access token>`. On a 401 the frontend makes one refresh call; each refresh token works once (rotation).
 5. Suspended accounts can't sign in or refresh, and their refresh tokens are revoked on suspension.
@@ -399,7 +400,7 @@ npm run dev                # http://localhost:3000
 | `APP_DATABASE_URL` | `app_user` connection used by the API (RLS applies) |
 | `MIGRATE_ON_START` | Apply pending migrations at startup (default `true`) |
 | `JWT_SECRET` | Signs access tokens |
-| `ACCESS_TOKEN_EXPIRES_IN` / `REFRESH_TOKEN_EXPIRES_DAYS` | Token lifetimes (default `15m` / `30`) |
+| `ACCESS_TOKEN_EXPIRES_IN` / `SESSION_MAX_AGE_HOURS` | Access token lifetime (default `15m`) / hours from sign-in until the user must sign in again (default `24`) |
 | `CORS_ORIGIN` | Allowed frontend origins, comma-separated |
 | `TRUST_PROXY` | Reverse proxies in front of the API (`0` locally, `1` on Render) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |

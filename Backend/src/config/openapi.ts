@@ -11,7 +11,7 @@ import {
 } from "../modules/auth/auth.schema";
 import { createRoomSchema, joinRoomSchema } from "../modules/rooms/rooms.schema";
 import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchema } from "../modules/expenses/expenses.schema";
-import { profileSchema } from "../modules/users/users.schema";
+import { deleteAccountSchema, profileSchema } from "../modules/users/users.schema";
 import { contactSchema } from "../modules/contact/contact.schema";
 import { contributionSchema, createFundSchema, disputeSchema, spendSchema } from "../modules/funds/funds.schema";
 import { createSettlementSchema } from "../modules/settlements/settlements.schema";
@@ -430,6 +430,7 @@ registry.registerPath({
             plan: z.enum(["basic", "standard", "premium"]),
             max_rooms: z.number(),
             room_count: z.number(),
+            has_password: z.boolean(),
           }),
         },
       },
@@ -458,6 +459,20 @@ registry.registerPath({
   request: { body: { content: { "application/json": { schema: profileSchema } } } },
   responses: {
     200: { description: "Profile saved, onboarding complete", content: { "application/json": { schema: profileResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/users/me/delete",
+  tags: ["Users"],
+  summary: "Delete (anonymise) your own account. Needs your password if the account has one. Refused while you have money to settle",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { body: { content: { "application/json": { schema: deleteAccountSchema } } } },
+  responses: {
+    200: { description: "Account deleted; every session is signed out", content: { "application/json": { schema: z.object({ deleted: z.boolean() }) } } },
+    400: { description: "Wrong password, or DELETE not typed", content: { "application/json": { schema: errorResponseSchema } } },
+    409: { description: "Unsettled money in a room", content: { "application/json": { schema: errorResponseSchema } } },
   },
 });
 

@@ -21,3 +21,12 @@ export const profileSchema = z.object({
 });
 
 export type ProfileInput = z.infer<typeof profileSchema>;
+
+// Typing DELETE guards against a stray click; the password (for accounts that
+// have one) makes sure it's really the owner, not someone at an unlocked laptop.
+export const deleteAccountSchema = z.object({
+  confirm: z.literal("DELETE", { error: 'Type DELETE to confirm' }),
+  password: z.string().max(200).optional(),
+});
+
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;

@@ -73,6 +73,12 @@ export const otpVerifyLimiter = limiter(15, 10, "Too many code attempts. Try aga
 // someone's inbox, so these share one tight per-IP budget.
 export const emailSendLimiter = limiter(60, 8, "Too many emails requested. Please try again in an hour.");
 
+// Deleting needs the password, so cap guesses per account like login does.
+export const deleteAccountLimiter = limiter(15, 5, "Too many attempts. Try again in 15 minutes.", {
+  keyGenerator: userOrIp,
+  skipSuccessfulRequests: true,
+});
+
 export const contactLimiter = limiter(60, 3, "You've sent a few messages already. Please try again later.");
 
 // Throttling, not blocking: after 3 login attempts in the window each extra

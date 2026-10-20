@@ -71,6 +71,40 @@ describe("register -> verify -> login", () => {
     expect((await api(null, "POST", "/api/auth/refresh", { refreshToken })).status).toBe(200);
     expect((await api(null, "POST", "/api/auth/refresh", { refreshToken })).status).toBe(401);
   });
+
+  it("refreshing doesn't extend the session: it ends a fixed time after sign-in", async () => {
+    const expiryOf = async (token: string) =>
+      (await adminPool.query("SELECT expires_at FROM refresh_tokens WHERE token_hash = $1", [sha256(token)])).rows[0]
+        .expires_at as Date;
+
+    const login = await api(null, "POST", "/api/auth/login", { email, password });
+    const first = login.body.data.refreshToken;
+    const deadline = await expiryOf(first);
+    expect(deadline.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+
+    const rotated = await api(null, "POST", "/api/auth/refresh", { refreshToken: first });
+    const second = rotated.body.data.refreshToken;
+    expect((await expiryOf(second)).getTime()).toBe(deadline.getTime());
+
+    // Past the deadline the session is over, even though the token was never used.
+    await adminPool.query("UPDATE refresh_tokens SET expires_at = now() - interval '1 second' WHERE token_hash = $1", [
+      sha256(second),
+    ]);
+    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken: second })).status).toBe(401);
+  });
+
+  it("caps sessions issued under the old 30-day rule at the current maximum", async () => {
+    const login = await api(null, "POST", "/api/auth/login", { email, password });
+    const old = login.body.data.refreshToken;
+    await adminPool.query("UPDATE refresh_tokens SET expires_at = now() + interval '30 days' WHERE token_hash = $1", [
+      sha256(old),
+    ]);
+    const rotated = await api(null, "POST", "/api/auth/refresh", { refreshToken: old });
+    const { rows } = await adminPool.query("SELECT expires_at FROM refresh_tokens WHERE token_hash = $1", [
+      sha256(rotated.body.data.refreshToken),
+    ]);
+    expect((rows[0].expires_at as Date).getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+  });
 });
 
 describe("authentication on protected routes", () => {
