@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { apiPost, errorMessage } from "@/lib/api";
+import { authApiPost, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth, useRedirectIfAuthenticated } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 import { OtpInput } from "@/components/ui/OtpInput";
@@ -41,7 +41,7 @@ function ResetPasswordForm() {
     }
     setLoading(true);
     try {
-      completeAuth(await apiPost<AuthResponse>("/api/auth/reset-password", { email, code, newPassword }));
+      completeAuth(await authApiPost<AuthResponse>("/api/auth/reset-password", { email, code, newPassword }));
     } catch (err) {
       setError(errorMessage(err, "Could not reset password"));
     } finally {
@@ -52,7 +52,7 @@ function ResetPasswordForm() {
   async function handleResend() {
     setError(null);
     setNotice(null);
-    await apiPost("/api/auth/forgot-password", { email });
+    await authApiPost("/api/auth/forgot-password", { email });
     setNotice("A new code is on its way.");
   }
 

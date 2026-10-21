@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useGoogleLogin } from "@react-oauth/google";
-import { apiPost, errorMessage } from "@/lib/api";
+import { authApiPost, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { FormMessage } from "@/components/ui/FormMessage";
@@ -61,7 +61,7 @@ function GoogleButton({ onError }: { onError: (message: string | null) => void }
       setLoading(true);
       onError(null);
       try {
-        completeAuth(await apiPost<AuthResponse>("/api/auth/google", { accessToken: access_token, agreedToTerms: true }));
+        completeAuth(await authApiPost<AuthResponse>("/api/auth/google", { accessToken: access_token, agreedToTerms: true }));
       } catch (err) {
         onError(errorMessage(err, "Google sign-in failed. Please try again."));
       } finally {

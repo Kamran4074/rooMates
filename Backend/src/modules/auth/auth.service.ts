@@ -33,6 +33,8 @@ export type PlatformRole = "user" | "super_admin";
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  /** The session's hard deadline - also when the refresh cookie expires. */
+  refreshExpiresAt: Date;
 }
 
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
@@ -302,12 +304,13 @@ function newSessionDeadline(): Date {
 
 export async function issueTokenPair(
   user: AuthenticatedUser,
-  sessionExpiresAt?: Date
+  sessionExpiresAt: Date = newSessionDeadline()
 ): Promise<TokenPair & { role: PlatformRole }> {
   const role = await assertActiveAccount(user.userId);
   return {
     accessToken: issueAccessToken(user),
     refreshToken: await issueRefreshToken(user.userId, sessionExpiresAt),
+    refreshExpiresAt: sessionExpiresAt,
     role,
   };
 }

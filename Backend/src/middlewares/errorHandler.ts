@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { NextFunction, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { logger } from "../config/logger";
@@ -39,6 +40,14 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   }
 
   logger.error("Unhandled error", { error: (err as Error).message, stack: (err as Error).stack, path: req.path });
+  // A real bug: report it. Only the route and the user's id go along - no
+  // body, headers or email. Grouped by route pattern (/rooms/:roomId), not
+  // the concrete URL, so one bug is one issue in Sentry.
+  Sentry.withScope((scope) => {
+    scope.setTag("route", `${req.method} ${req.baseUrl}${req.route?.path ?? req.path}`);
+    if (req.auth?.sub) scope.setUser({ id: req.auth.sub });
+    Sentry.captureException(err);
+  });
   return res.status(500).json({ success: false, message: "Internal server error" });
 }
 

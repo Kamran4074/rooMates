@@ -1,6 +1,6 @@
 import { adminPool } from "../src/config/db";
 import { sha256 } from "../src/utils/hash";
-import { api, cleanup, createUser, startServer, TestUser, validListing } from "./helpers";
+import { api, cleanup, createUser, refreshWith, startServer, TestUser, validListing } from "./helpers";
 
 let user: TestUser, owner: TestUser, admin: TestUser;
 
@@ -87,7 +87,7 @@ describe("suspending accounts", () => {
 
     const res = await api(admin, "POST", `/api/admin/users/${victim.id}/suspend`, { reason: "Spam listings" });
     expect(res.status).toBe(200);
-    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken })).status).toBe(401);
+    expect((await refreshWith(refreshToken)).status).toBe(401);
 
     expect((await api(admin, "POST", `/api/admin/users/${admin.id}/suspend`)).status).toBe(400);
     const otherAdmin = await createUser({ role: "super_admin" });

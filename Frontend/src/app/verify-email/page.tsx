@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { apiPost, errorMessage } from "@/lib/api";
+import { authApiPost, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth, useRedirectIfAuthenticated } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 import { OtpInput } from "@/components/ui/OtpInput";
@@ -36,7 +36,7 @@ function VerifyEmailForm() {
     setError(null);
     setNotice(null);
     try {
-      completeAuth(await apiPost<AuthResponse>("/api/auth/verify-email", { email, code }));
+      completeAuth(await authApiPost<AuthResponse>("/api/auth/verify-email", { email, code }));
     } catch (err) {
       setError(errorMessage(err, "Verification failed"));
     } finally {
@@ -47,7 +47,7 @@ function VerifyEmailForm() {
   async function handleResend() {
     setError(null);
     setNotice(null);
-    await apiPost("/api/auth/resend-verification", { email });
+    await authApiPost("/api/auth/resend-verification", { email });
     setNotice("A new code is on its way.");
   }
 

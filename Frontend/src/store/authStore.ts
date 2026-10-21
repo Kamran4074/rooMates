@@ -11,11 +11,12 @@ export interface AuthUser {
   role?: "user" | "super_admin";
 }
 
+// The refresh token isn't here: it's an httpOnly cookie the page can't read
+// (see app/api/auth). Only the short-lived access token is stored.
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
   user: AuthUser | null;
-  setAuth: (accessToken: string, refreshToken: string, user: AuthUser) => void;
+  setAuth: (accessToken: string, user: AuthUser) => void;
   setUser: (user: AuthUser) => void;
   logout: () => void;
 }
@@ -24,12 +25,17 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       accessToken: null,
-      refreshToken: null,
       user: null,
-      setAuth: (accessToken, refreshToken, user) => set({ accessToken, refreshToken, user }),
+      setAuth: (accessToken, user) => set({ accessToken, user }),
       setUser: (user) => set({ user }),
-      logout: () => set({ accessToken: null, refreshToken: null, user: null }),
+      logout: () => set({ accessToken: null, user: null }),
     }),
-    { name: "roomates-auth" }
+    {
+      name: "roomates-auth",
+      // v0 kept the refresh token in localStorage. Wipe the saved session so
+      // it's gone from the browser; those users simply sign in once more.
+      version: 1,
+      migrate: () => ({ accessToken: null, user: null }),
+    }
   )
 );

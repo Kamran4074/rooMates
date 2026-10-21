@@ -51,6 +51,18 @@ export async function apiGet<T>(path: string): Promise<T> {
   return handleResponse<T>(await fetch(`${API_URL}${path}`));
 }
 
+// Sign-in, sign-up, refresh and logout go to this site's own /api/auth
+// (forwarded to the API by app/api/auth), so the refresh cookie the API sets
+// is first-party here. The browser sends that cookie back automatically.
+export async function authApiPost<T>(path: `/api/auth/${string}`, body: unknown = {}): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<T>(res);
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -62,24 +74,21 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 // Access tokens are short-lived (15 min) on purpose. Rather than make every
 // page worry about expiry, a 401 on any authenticated call triggers exactly
-// one refresh attempt here, using the refresh token, before the call is
+// one refresh attempt here, using the refresh cookie, before the call is
 // retried. Once the session's 24h limit has passed the refresh gets a 401 and
 // the user is signed out. Concurrent 401s share a single in-flight refresh instead
 // of each firing their own.
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshAccessToken(): Promise<boolean> {
-  const { refreshToken, setAuth, logout } = useAuthStore.getState();
-  if (!refreshToken) return false;
+  const { user, setAuth, logout } = useAuthStore.getState();
+  // Signed out: nothing to refresh. (The cookie itself can't be checked from here.)
+  if (!user) return false;
 
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken }),
-        });
+        const res = await fetch("/api/auth/refresh", { method: "POST" });
         if (!res.ok) {
           // Only a definite "this token is no good" ends the session. A 5xx or
           // rate-limit (429) is temporary - logging out for that would kick
@@ -88,7 +97,7 @@ async function tryRefreshAccessToken(): Promise<boolean> {
           return false;
         }
         const { data } = await res.json();
-        setAuth(data.accessToken, data.refreshToken, data.user);
+        setAuth(data.accessToken, data.user);
         return true;
       } catch {
         // Network error (server down, offline): keep the session and just let

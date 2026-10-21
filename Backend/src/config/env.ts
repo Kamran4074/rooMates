@@ -28,6 +28,12 @@ const envSchema = z.object({
   // user has to sign in again however active they've been.
   SESSION_MAX_AGE_HOURS: z.coerce.number().positive().default(24),
   GOOGLE_CLIENT_ID: z.string().optional(),
+  // Shared with the frontend's auth proxy, which forwards the user's IP for
+  // rate limits; only trusted with this secret (see clientIp.ts).
+  // Empty = not set (then the forwarded IP is never trusted).
+  PROXY_SECRET: z.string().min(32, "PROXY_SECRET must be at least 32 characters").or(z.literal("")).optional(),
+  // Sentry error tracking; empty = off.
+  SENTRY_DSN: z.string().optional(),
   BREVO_API_KEY: z.string().optional(),
   EMAIL_FROM_NAME: z.string().default("RooMates"),
   // Must be a sender verified in Brevo (Settings -> Senders), or sends are rejected.

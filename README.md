@@ -324,6 +324,7 @@ Everyone used the pool equally, so each participant's fair cost is *total spent 
 3. **Google:** the browser gets a Google access token; the API checks with Google that it was issued *to our client ID* (`aud`), that the email is verified, then links to an existing account with that email or creates one.
 4. Every request sends `Authorization: Bearer <access token>`. On a 401 the frontend makes one refresh call; each refresh token works once (rotation).
 5. Suspended accounts can't sign in or refresh, and their refresh tokens are revoked on suspension.
+6. **Where the tokens live:** the refresh token is an `httpOnly`, `SameSite=Strict`, `Path=/api/auth` cookie, so page JavaScript (an XSS payload, a bad npm package) can't read it; only the 15-minute access token is in `localStorage`. Sign-in, refresh and logout go through the frontend's own `/api/auth/*` route ([route.ts](Frontend/src/app/api/auth/[action]/route.ts)), which forwards to the API. That keeps the cookie first-party: set straight from the API's domain it would be a third-party cookie, which Safari, iPhone browsers and incognito windows block. The proxy passes the visitor's IP along with `PROXY_SECRET`, so per-IP sign-in limits still apply per person ([clientIp.ts](Backend/src/middlewares/clientIp.ts)).
 
 ## Security checklist
 
@@ -401,6 +402,8 @@ npm run dev                # http://localhost:3000
 | `MIGRATE_ON_START` | Apply pending migrations at startup (default `true`) |
 | `JWT_SECRET` | Signs access tokens |
 | `ACCESS_TOKEN_EXPIRES_IN` / `SESSION_MAX_AGE_HOURS` | Access token lifetime (default `15m`) / hours from sign-in until the user must sign in again (default `24`) |
+| `SENTRY_DSN` | Optional. Sentry DSN for the API; only unhandled (500) errors are sent, with no request data. Empty = off. The frontend uses `NEXT_PUBLIC_SENTRY_DSN` |
+| `PROXY_SECRET` | 32+ random characters, the **same value** on Render and Vercel. Lets the frontend's auth proxy pass on the visitor's IP for rate limits. Empty = the forwarded IP is ignored |
 | `CORS_ORIGIN` | Allowed frontend origins, comma-separated |
 | `TRUST_PROXY` | Reverse proxies in front of the API (`0` locally, `1` on Render) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
@@ -426,7 +429,7 @@ npm run dev                # http://localhost:3000
 | `npm run dev` | Development server (applies pending migrations first) |
 | `npm run build` / `npm start` | Compile to `dist/` / run the compiled server |
 | `npm test` | Unit tests (no database) |
-| `npm run test:api` | API integration tests against the database in `.env` |
+| `npm run test:api` | API integration tests against a **local** database (refuses to run on a remote one) |
 | `npm run migrate:create -- <name>` | New migration file |
 | `npm run migrate:up` / `npm run migrate:down` | Apply / undo migrations manually |
 
@@ -443,10 +446,18 @@ Migrations live in `Backend/migrations/` and run automatically at startup, all p
 ```bash
 cd Backend
 npm test            # unit tests: settlement algorithm, splits, fund maths, geo, schemas (no DB)
-npm run test:api    # API integration tests: real app + the database in .env; creates and deletes its own users
+npm run test:api    # API integration tests: real app + a LOCAL database; creates and deletes its own users
+
+# test:api refuses any non-local DATABASE_URL (it would write to production and
+# re-seed the super admin). With the Docker Postgres from Local setup running
+# (PowerShell; the values here override .env for this terminal only):
+#   $env:DATABASE_URL="postgres://postgres:postgres@localhost:55432/neondb"
+#   $env:APP_DB_PASSWORD="app_pw"
+#   $env:APP_DATABASE_URL="postgres://app_user:app_pw@localhost:55432/neondb"
+#   npm run migrate up; npm run test:api
 ```
 
-**33 unit tests and 99 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), plans (Basic locks, upgrade requests, admin approval for the period paid, renewals that extend, expiry back to Basic, the admin pricing editor), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**36 unit tests and 107 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), plans (Basic locks, upgrade requests, admin approval for the period paid, renewals that extend, expiry back to Basic, the admin pricing editor), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 
@@ -475,7 +486,6 @@ On a VPS instead: run the backend with PM2 (`pm2 start dist/index.js --name room
 
 ## Future improvements
 
-- Refresh token in an `httpOnly` cookie instead of `localStorage`
 - Redis-backed rate limits once there's more than one server instance
 - Listing expiry (e.g. auto-hide after 60 days) via a scheduled job
 - Edit an expense (today: delete and re-add)

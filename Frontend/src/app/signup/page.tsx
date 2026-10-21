@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiPost, errorMessage } from "@/lib/api";
+import { authApiPost, errorMessage } from "@/lib/api";
 import { useRedirectIfAuthenticated } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 import { TextField } from "@/components/ui/TextField";
@@ -36,7 +36,7 @@ export default function SignUpPage() {
 
     setLoading(true);
     try {
-      await apiPost("/api/auth/signup", {
+      await authApiPost("/api/auth/signup", {
         name: `${firstName} ${lastName}`.trim(),
         email,
         password,

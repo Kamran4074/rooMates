@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiPost, errorMessage } from "@/lib/api";
+import { authApiPost, errorMessage } from "@/lib/api";
 import { useRedirectIfAuthenticated } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 import { TextField } from "@/components/ui/TextField";
@@ -22,7 +22,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setError(null);
     try {
-      await apiPost("/api/auth/forgot-password", { email });
+      await authApiPost("/api/auth/forgot-password", { email });
       router.push(`/reset-password?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(errorMessage(err, "Something went wrong. Please try again."));

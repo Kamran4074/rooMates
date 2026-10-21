@@ -1,6 +1,6 @@
 import { adminPool } from "../src/config/db";
 import { sha256 } from "../src/utils/hash";
-import { api, cleanup, createUser, startServer, trackUserByEmail } from "./helpers";
+import { api, cleanup, createUser, refreshCookieOf, refreshWith, startServer, trackUserByEmail } from "./helpers";
 
 // No real emails from tests: the OTP is replaced with a known code below.
 jest.mock("../src/config/email", () => ({
@@ -49,9 +49,13 @@ describe("register -> verify -> login", () => {
     expect((await api(null, "POST", "/api/auth/verify-email", { email, code: "000000" })).status).toBe(400);
     const ok = await api(null, "POST", "/api/auth/verify-email", { email, code: "123456" });
     expect(ok.status).toBe(200);
-    expect(ok.body.data).toEqual(
-      expect.objectContaining({ accessToken: expect.any(String), refreshToken: expect.any(String) })
-    );
+    expect(ok.body.data.accessToken).toEqual(expect.any(String));
+    // The refresh token is only in the httpOnly cookie, never readable from the body.
+    expect(ok.body.data.refreshToken).toBeUndefined();
+    const cookie = ok.headers.getSetCookie().find((c) => c.startsWith("rm_refresh="))!;
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/SameSite=Strict/i);
+    expect(cookie).toMatch(/Path=\/api\/auth/i);
     expect(ok.body.data.user.role).toBe("user");
   });
 
@@ -67,9 +71,29 @@ describe("register -> verify -> login", () => {
 
   it("a refresh token works once (rotation)", async () => {
     const login = await api(null, "POST", "/api/auth/login", { email, password });
-    const { refreshToken } = login.body.data;
-    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken })).status).toBe(200);
-    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken })).status).toBe(401);
+    const refreshToken = refreshCookieOf(login);
+    const first = await refreshWith(refreshToken);
+    expect(first.status).toBe(200);
+    expect(refreshCookieOf(first)).not.toBe(refreshToken); // rotated
+    const reused = await refreshWith(refreshToken);
+    expect(reused.status).toBe(401);
+    // The dead cookie is cleared along with the 401.
+    expect(reused.headers.getSetCookie().some((c) => c.startsWith("rm_refresh=;"))).toBe(true);
+  });
+
+  it("refresh without a cookie is a 401, and a body token is no longer accepted", async () => {
+    const login = await api(null, "POST", "/api/auth/login", { email, password });
+    expect((await refreshWith(undefined)).status).toBe(401);
+    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken: refreshCookieOf(login) })).status).toBe(401);
+  });
+
+  it("logout revokes the session in the cookie and clears it", async () => {
+    const login = await api(null, "POST", "/api/auth/login", { email, password });
+    const token = refreshCookieOf(login);
+    const out = await api(null, "POST", "/api/auth/logout", undefined, { cookie: `rm_refresh=${token}` });
+    expect(out.status).toBe(204);
+    expect(out.headers.getSetCookie().some((c) => c.startsWith("rm_refresh=;"))).toBe(true);
+    expect((await refreshWith(token)).status).toBe(401);
   });
 
   it("refreshing doesn't extend the session: it ends a fixed time after sign-in", async () => {
@@ -78,30 +102,30 @@ describe("register -> verify -> login", () => {
         .expires_at as Date;
 
     const login = await api(null, "POST", "/api/auth/login", { email, password });
-    const first = login.body.data.refreshToken;
+    const first = refreshCookieOf(login)!;
     const deadline = await expiryOf(first);
     expect(deadline.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
 
-    const rotated = await api(null, "POST", "/api/auth/refresh", { refreshToken: first });
-    const second = rotated.body.data.refreshToken;
+    const rotated = await refreshWith(first);
+    const second = refreshCookieOf(rotated)!;
     expect((await expiryOf(second)).getTime()).toBe(deadline.getTime());
 
     // Past the deadline the session is over, even though the token was never used.
     await adminPool.query("UPDATE refresh_tokens SET expires_at = now() - interval '1 second' WHERE token_hash = $1", [
       sha256(second),
     ]);
-    expect((await api(null, "POST", "/api/auth/refresh", { refreshToken: second })).status).toBe(401);
+    expect((await refreshWith(second)).status).toBe(401);
   });
 
   it("caps sessions issued under the old 30-day rule at the current maximum", async () => {
     const login = await api(null, "POST", "/api/auth/login", { email, password });
-    const old = login.body.data.refreshToken;
+    const old = refreshCookieOf(login)!;
     await adminPool.query("UPDATE refresh_tokens SET expires_at = now() + interval '30 days' WHERE token_hash = $1", [
       sha256(old),
     ]);
-    const rotated = await api(null, "POST", "/api/auth/refresh", { refreshToken: old });
+    const rotated = await refreshWith(old);
     const { rows } = await adminPool.query("SELECT expires_at FROM refresh_tokens WHERE token_hash = $1", [
-      sha256(rotated.body.data.refreshToken),
+      sha256(refreshCookieOf(rotated)!),
     ]);
     expect((rows[0].expires_at as Date).getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });

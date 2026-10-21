@@ -2,6 +2,7 @@ import { Request } from "express";
 import { ipKeyGenerator, rateLimit, Options } from "express-rate-limit";
 import { slowDown } from "express-slow-down";
 import { verifyAccessToken } from "./authenticate";
+import { clientIp } from "./clientIp";
 
 // In-memory counters: fine for a single server, but they reset on restart and
 // aren't shared between instances. Once Redis is added, switch these to a
@@ -33,7 +34,12 @@ export function userOrIp(req: Request) {
       // fall through to the IP
     }
   }
-  return ipKeyGenerator(req.ip ?? "");
+  return byIp(req);
+}
+
+// Per-IP key, with IPv6 grouped by /56 (one host owns a whole block).
+function byIp(req: Request) {
+  return ipKeyGenerator(clientIp(req));
 }
 
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -55,7 +61,7 @@ export const joinLimiter = limiter(60, 10, "Too many join requests. Try again in
 export const uploadLimiter = limiter(60, 40, "Too many photo uploads. Try again in an hour.", { keyGenerator: userOrIp });
 
 // Per IP: caps how many sign-in attempts one network can make overall.
-export const authLimiter = limiter(15, 20, "Too many sign-in attempts from this network. Try again in 15 minutes.");
+export const authLimiter = limiter(15, 20, "Too many sign-in attempts from this network. Try again in 15 minutes.", { keyGenerator: byIp });
 
 // Per ACCOUNT, counting only failures: an attacker spreading password guesses
 // across many IPs still gets just 5 tries per account per window, while a
@@ -67,11 +73,11 @@ export const loginAccountLimiter = limiter(15, 5, "Too many failed attempts for 
 
 // Per IP across OTP checks. Each code already locks after 5 wrong guesses;
 // this stops someone cycling through fresh codes to keep guessing.
-export const otpVerifyLimiter = limiter(15, 10, "Too many code attempts. Try again in 15 minutes.");
+export const otpVerifyLimiter = limiter(15, 10, "Too many code attempts. Try again in 15 minutes.", { keyGenerator: byIp });
 
 // Anything that sends an email costs real email quota and can be used to spam
 // someone's inbox, so these share one tight per-IP budget.
-export const emailSendLimiter = limiter(60, 8, "Too many emails requested. Please try again in an hour.");
+export const emailSendLimiter = limiter(60, 8, "Too many emails requested. Please try again in an hour.", { keyGenerator: byIp });
 
 // Deleting needs the password, so cap guesses per account like login does.
 export const deleteAccountLimiter = limiter(15, 5, "Too many attempts. Try again in 15 minutes.", {
@@ -79,13 +85,14 @@ export const deleteAccountLimiter = limiter(15, 5, "Too many attempts. Try again
   skipSuccessfulRequests: true,
 });
 
-export const contactLimiter = limiter(60, 3, "You've sent a few messages already. Please try again later.");
+export const contactLimiter = limiter(60, 3, "You've sent a few messages already. Please try again later.", { keyGenerator: byIp });
 
 // Throttling, not blocking: after 3 login attempts in the window each extra
 // attempt is delayed a little more (0.5s, 1s, 1.5s... capped at 5s). A human
 // barely notices; a password-guessing script slows to a crawl.
 export const loginThrottle = slowDown({
   windowMs: 15 * MINUTE,
+  keyGenerator: byIp,
   delayAfter: 3,
   delayMs: (used) => (used - 3) * 500,
   maxDelayMs: 5000,

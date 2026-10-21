@@ -38,6 +38,9 @@ services:
         value: 15m
       - key: SESSION_MAX_AGE_HOURS
         value: "24"
+      # Same value as PROXY_SECRET on Vercel (the frontend's auth proxy).
+      - key: PROXY_SECRET
+        sync: false
       - key: EMAIL_FROM_NAME
         value: RooMates
       - key: EMAIL_FROM_ADDRESS

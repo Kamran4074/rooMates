@@ -1,3 +1,5 @@
+// Must be first: sets up error tracking before anything else can fail.
+import "./config/sentry";
 import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./config/logger";

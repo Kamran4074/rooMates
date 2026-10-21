@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiPost, ApiError, errorMessage } from "@/lib/api";
+import { authApiPost, ApiError, errorMessage } from "@/lib/api";
 import { AuthResponse, useCompleteAuth, useRedirectIfAuthenticated } from "@/lib/auth";
 import { AuthShell } from "@/components/AuthShell";
 import { TextField } from "@/components/ui/TextField";
@@ -26,7 +26,7 @@ export default function SignInPage() {
     setLoading(true);
     setError(null);
     try {
-      completeAuth(await apiPost<AuthResponse>("/api/auth/login", { email, password }));
+      completeAuth(await authApiPost<AuthResponse>("/api/auth/login", { email, password }));
     } catch (err) {
       // 403 = correct password but email not verified yet; backend already emailed a fresh code.
       if (err instanceof ApiError && err.status === 403) {

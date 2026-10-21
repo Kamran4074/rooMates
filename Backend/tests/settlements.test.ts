@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { adminPool, withUserContext } from "../src/config/db";
 import { seedSuperAdmin } from "../src/config/superAdminSeed";
-import { api, cleanup, createUser, startServer, trackUserByEmail, TestUser, joinRoom } from "./helpers";
+import { api, cleanup, createUser, refreshCookieOf, refreshWith, startServer, trackUserByEmail, TestUser, joinRoom } from "./helpers";
 
 // Settle-up payments, soft-deleted expenses, the shared room_ledger balances,
 // and the env-driven super admin seed.
@@ -137,7 +137,7 @@ describe("super admin seed (SUPER_ADMIN_* env)", () => {
 
     expect((await login("first-password-123")).status).toBe(401);
     expect((await login("second-password-456")).status).toBe(200);
-    const refresh = await api(null, "POST", "/api/auth/refresh", { refreshToken: session.body.data.refreshToken });
+    const refresh = await refreshWith(refreshCookieOf(session));
     expect(refresh.status).toBe(401);
   });
 

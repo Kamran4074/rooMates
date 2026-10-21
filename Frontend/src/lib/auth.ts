@@ -3,12 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, AuthUser } from "@/store/authStore";
-import { apiPost } from "@/lib/api";
+import { authApiPost } from "@/lib/api";
 import { useHydrated } from "@/lib/useHydrated";
 
+// The refresh token isn't in the body - the API sets it as an httpOnly cookie.
 export interface AuthResponse {
   accessToken: string;
-  refreshToken: string;
   user: AuthUser;
 }
 
@@ -23,7 +23,7 @@ export function useCompleteAuth() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   return (data: AuthResponse) => {
-    setAuth(data.accessToken, data.refreshToken, data.user);
+    setAuth(data.accessToken, data.user);
     router.push(postAuthPath(data.user));
   };
 }
@@ -49,17 +49,14 @@ export function useRequireAuth({ requireOnboarding = true } = {}) {
   return { user, ready: hydrated && !!accessToken && !needsOnboarding };
 }
 
-// Revokes the refresh token server-side, not just locally - otherwise a copy
-// of it (e.g. from a shared computer) would stay usable for its full lifetime.
-// Cached rooms are cleared by the rooms store itself when the session ends.
+// Revokes the session server-side and clears the refresh cookie, not just the
+// local state - otherwise the cookie would stay usable for the rest of the
+// session. Cached rooms are cleared by the rooms store itself when it ends.
 export function useLogout() {
   const router = useRouter();
   return async () => {
-    const { refreshToken, logout } = useAuthStore.getState();
-    if (refreshToken) {
-      await apiPost("/api/auth/logout", { refreshToken }).catch(() => {});
-    }
-    logout();
+    await authApiPost("/api/auth/logout").catch(() => {});
+    useAuthStore.getState().logout();
     router.replace("/signin");
   };
 }

@@ -1,4 +1,4 @@
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { ErrorEvent, init } from "@sentry/nextjs";
 
 // Shared by the browser and server Sentry setups (instrumentation*.ts).
 // With no DSN set (local dev, or before the Sentry project exists) Sentry
@@ -27,7 +27,20 @@ export const sentryOptions = {
   environment: process.env.NODE_ENV,
   // Errors only. Performance tracing would use up the free tier's quota fast.
   tracesSampleRate: 0,
-  // No IP addresses, cookies or request bodies.
-  sendDefaultPii: false,
+  // Sentry collects all of this by default - request bodies (passwords on the
+  // sign-in form), local variables, headers (the access token), cookies.
+  // Everything is off: only the error and its stack trace are sent.
+  dataCollection: {
+    userInfo: false,
+    cookies: false,
+    httpHeaders: false,
+    httpBodies: [],
+    urlQueryParams: false,
+    databaseQueryData: false,
+    stackFrameVariables: false,
+    queues: false,
+    genAI: { inputs: false, outputs: false },
+  },
   beforeSend: scrub,
-};
+  // `satisfies` so a misspelt or removed option is a type error, not silently ignored.
+} satisfies Parameters<typeof init>[0];

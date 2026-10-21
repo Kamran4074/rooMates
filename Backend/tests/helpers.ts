@@ -61,18 +61,35 @@ export async function trackUserByEmail(email: string) {
   }
 }
 
-export async function api(user: TestUser | null, method: string, path: string, body?: unknown) {
+export async function api(
+  user: TestUser | null,
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {}
+) {
   const res = await fetch(baseUrl + path, {
     method,
     headers: {
       "content-type": "application/json",
       ...(user && { Authorization: `Bearer ${user.token}` }),
+      ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : null };
+  return { status: res.status, headers: res.headers, body: text ? JSON.parse(text) : null };
 }
+
+// The refresh token arrives only as the httpOnly rm_refresh cookie.
+export function refreshCookieOf(res: { headers: Headers }): string | undefined {
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith("rm_refresh="));
+  return cookie?.slice("rm_refresh=".length).split(";")[0] || undefined;
+}
+
+// POST /api/auth/refresh the way the browser does: with the cookie, no body.
+export const refreshWith = (token: string | undefined) =>
+  api(null, "POST", "/api/auth/refresh", undefined, token ? { cookie: `rm_refresh=${token}` } : {});
 
 // The test server's address and the server itself (the WebSocket server attaches to it).
 export const baseUrlOf = () => baseUrl;

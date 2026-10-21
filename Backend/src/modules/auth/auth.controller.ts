@@ -4,7 +4,6 @@ import {
   googleLoginSchema,
   signupSchema,
   loginSchema,
-  refreshSchema,
   emailOnlySchema,
   verifyEmailSchema,
   resetPasswordSchema,
@@ -24,6 +23,8 @@ import {
   AuthenticatedUser,
 } from "./auth.service";
 import { logger } from "../../config/logger";
+import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from "../../config/authCookie";
+import { AppError } from "../../middlewares/errorHandler";
 
 // Express 5 forwards rejected promises to the error middleware, so these are
 // plain async handlers with no try/catch wrapper.
@@ -40,10 +41,12 @@ function userResponse(user: AuthenticatedUser) {
   };
 }
 
-// Every flow that ends in "you're now signed in" responds the same way.
+// Every flow that ends in "you're now signed in" responds the same way: the
+// refresh token goes into the httpOnly cookie, never into the JSON body.
 async function sendSession(res: Response, user: AuthenticatedUser) {
-  const { role, ...tokens } = await issueTokenPair(user);
-  sendSuccess(res, { ...tokens, user: userResponse({ ...user, role }) });
+  const { role, refreshToken, refreshExpiresAt, accessToken } = await issueTokenPair(user);
+  setRefreshCookie(res, refreshToken, refreshExpiresAt);
+  sendSuccess(res, { accessToken, user: userResponse({ ...user, role }) });
 }
 
 export const googleLogin: Handler = async (req, res) => {
@@ -92,12 +95,22 @@ export const resetPasswordHandler: Handler = async (req, res) => {
 };
 
 export const refresh: Handler = async (req, res) => {
-  const { refreshToken } = refreshSchema.parse(req.body);
-  const { accessToken, refreshToken: newRefreshToken, user } = await rotateRefreshToken(refreshToken);
-  sendSuccess(res, { accessToken, refreshToken: newRefreshToken, user: userResponse(user) });
+  const token = readRefreshCookie(req);
+  if (!token) throw new AppError("Not signed in", 401);
+  try {
+    const { accessToken, refreshToken, refreshExpiresAt, user } = await rotateRefreshToken(token);
+    setRefreshCookie(res, refreshToken, refreshExpiresAt);
+    sendSuccess(res, { accessToken, user: userResponse(user) });
+  } catch (err) {
+    // Expired, revoked or suspended: drop the dead cookie along with the 401/403.
+    clearRefreshCookie(res);
+    throw err;
+  }
 };
 
 export const logout: Handler = async (req, res) => {
-  await revokeRefreshToken(refreshSchema.parse(req.body).refreshToken);
+  const token = readRefreshCookie(req);
+  if (token) await revokeRefreshToken(token);
+  clearRefreshCookie(res);
   sendNoContent(res);
 };

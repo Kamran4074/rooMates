@@ -4,7 +4,6 @@ import {
   googleLoginSchema,
   signupSchema,
   loginSchema,
-  refreshSchema,
   emailOnlySchema,
   verifyEmailSchema,
   resetPasswordSchema,
@@ -70,9 +69,10 @@ const authUserSchema = z.object({
   onboardingCompleted: z.boolean(),
 });
 
+// The refresh token is never in the body: it's set as the httpOnly
+// rm_refresh cookie (path /api/auth) alongside this response.
 const tokenPairResponseSchema = z.object({
   accessToken: z.string(),
-  refreshToken: z.string(),
   user: authUserSchema,
 });
 
@@ -164,11 +164,10 @@ registry.registerPath({
   method: "post",
   path: "/api/auth/refresh",
   tags: ["Auth"],
-  summary: "Exchange a valid refresh token for a new access/refresh pair (rotates the refresh token)",
-  request: { body: { content: { "application/json": { schema: refreshSchema } } } },
+  summary: "Exchange the rm_refresh cookie for a new access token; the cookie is rotated",
   responses: {
-    200: { description: "New token pair issued", content: { "application/json": { schema: tokenPairResponseSchema } } },
-    401: { description: "Invalid or expired refresh token", content: { "application/json": { schema: errorResponseSchema } } },
+    200: { description: "New access token; a new rm_refresh cookie is set", content: { "application/json": { schema: tokenPairResponseSchema } } },
+    401: { description: "No cookie, or an expired/revoked refresh token (the cookie is cleared)", content: { "application/json": { schema: errorResponseSchema } } },
   },
 });
 
@@ -176,8 +175,7 @@ registry.registerPath({
   method: "post",
   path: "/api/auth/logout",
   tags: ["Auth"],
-  summary: "Revoke a refresh token (logout)",
-  request: { body: { content: { "application/json": { schema: refreshSchema } } } },
+  summary: "Revoke the session in the rm_refresh cookie and clear the cookie (logout)",
   responses: {
     204: { description: "Logged out" },
   },
