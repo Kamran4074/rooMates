@@ -1,8 +1,21 @@
-import { rupees } from "./format";
+import { formatDate, rupees } from "./format";
 import type { ActivityEvent } from "./types";
 
 // Used by the Notifications feed and the live-update toasts, so both say the same thing.
 // One feed row in plain words: "Kamran added Groceries · ₹600".
+// "₹900 → ₹1,200, date 3 Oct → 5 Oct" - only what an edit changed.
+function describeChanges(changes: NonNullable<ActivityEvent["data"]["changes"]>): string {
+  const parts: string[] = [];
+  if (changes.amount_paise) parts.push(`${rupees(changes.amount_paise[0])} → ${rupees(changes.amount_paise[1])}`);
+  if (changes.description) parts.push(`renamed from “${changes.description[0]}”`);
+  if (changes.expense_date) {
+    parts.push(`date ${formatDate(changes.expense_date[0], "short")} → ${formatDate(changes.expense_date[1], "short")}`);
+  }
+  if (changes.paid_by) parts.push(`paid by ${changes.paid_by[0] ?? "someone"} → ${changes.paid_by[1] ?? "someone"}`);
+  if (changes.category) parts.push(`section ${changes.category[0] ?? "none"} → ${changes.category[1] ?? "none"}`);
+  return parts.join(", ");
+}
+
 export function describeActivity(e: ActivityEvent, myId?: string): string {
   const who = (id: string | null, name: string | null, you = "You") => (id && id === myId ? you : (name ?? "Former member"));
   const actor = who(e.actor_id, e.actor_name ?? (e.actor_id === e.subject_id ? (e.data.name ?? null) : null));
@@ -19,6 +32,11 @@ export function describeActivity(e: ActivityEvent, myId?: string): string {
       return `${actor} added ${e.data.description} · ${amount}${sameActor ? "" : ` (paid by ${subjectLower})`}`;
     case "expense_deleted":
       return `${actor} deleted the expense ${e.data.description} (${amount})`;
+    case "expense_edited": {
+      const changed = e.data.changes ? describeChanges(e.data.changes) : "";
+      // Nothing listed = the amounts stayed, only who shares it changed.
+      return changed ? `${actor} edited ${e.data.description}: ${changed}` : `${actor} changed who shares ${e.data.description}`;
+    }
     case "payment_recorded":
       return `${subject} paid ${e.to_name ?? "someone"} ${amount}${sameActor ? "" : ` · recorded by ${actor}`}`;
     case "payment_deleted":

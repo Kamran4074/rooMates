@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { apiAuthPost, errorMessage } from "@/lib/api";
+import { apiAuthPost, apiAuthPut, errorMessage } from "@/lib/api";
 import { rupees, todayInIndia } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
-import type { Category, Member } from "@/lib/types";
+import type { Category, ExpenseDetail, Member } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { TextField } from "@/components/ui/TextField";
 import { Select } from "@/components/ui/Select";
@@ -14,22 +14,36 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Avatar } from "@/components/ui/Avatar";
 import { MemberPicker } from "./MemberPicker";
 
-// Add an expense. Picking a bill section (Rent, Groceries...) ticks the people
-// who share that bill; untick or tick anyone for this one expense. The amount
-// is split equally between the ticked people - or type custom amounts.
-export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; members: Member[]; onAdded: () => void }) {
+// Add an expense - or, given `expense`, edit it (the same form, filled in).
+// Picking a bill section (Rent, Groceries...) ticks the people who share that
+// bill; untick or tick anyone for this one expense. The amount is split
+// equally between the ticked people - or type custom amounts.
+export function AddExpenseForm({
+  roomId,
+  members,
+  expense,
+  onAdded,
+}: {
+  roomId: string;
+  members: Member[];
+  /** Editing: the saved expense to start from. */
+  expense?: ExpenseDetail;
+  onAdded: () => void;
+}) {
   const myId = useAuthStore((s) => s.user?.id);
   const { data: categories = [] } = useApiQuery<Category[]>(`/api/rooms/${roomId}/categories`);
   const everyone = members.map((m) => m.user_id);
 
-  const [categoryId, setCategoryId] = useState("");
-  const [participantIds, setParticipantIds] = useState<string[]>(everyone);
-  const [paidBy, setPaidBy] = useState(myId ?? members[0]?.user_id ?? "");
-  const [expenseDate, setExpenseDate] = useState(todayInIndia);
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [splitType, setSplitType] = useState<"equal" | "custom">("equal");
-  const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
+  const [categoryId, setCategoryId] = useState(expense?.categoryId ?? "");
+  const [participantIds, setParticipantIds] = useState<string[]>(expense?.participantIds ?? everyone);
+  const [paidBy, setPaidBy] = useState(expense?.paidBy ?? myId ?? members[0]?.user_id ?? "");
+  const [expenseDate, setExpenseDate] = useState(expense?.expenseDate ?? todayInIndia());
+  const [description, setDescription] = useState(expense?.description ?? "");
+  const [amount, setAmount] = useState(expense ? String(expense.amountPaise / 100) : "");
+  const [splitType, setSplitType] = useState<"equal" | "custom">(expense?.splitType ?? "equal");
+  const [customSplits, setCustomSplits] = useState<Record<string, string>>(() =>
+    Object.fromEntries((expense?.splits ?? []).map((s) => [s.userId, String(s.sharePaise / 100)]))
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -51,21 +65,23 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    const body = {
+      description,
+      amount: amountNum,
+      paidBy,
+      expenseDate,
+      splitType,
+      ...(categoryId && { categoryId }),
+      ...(splitType === "equal"
+        ? { participantIds }
+        : { splits: members.map((m) => ({ userId: m.user_id, amount: parseFloat(customSplits[m.user_id] || "0") })) }),
+    };
     try {
-      await apiAuthPost(`/api/rooms/${roomId}/expenses`, {
-        description,
-        amount: amountNum,
-        paidBy,
-        expenseDate,
-        splitType,
-        ...(categoryId && { categoryId }),
-        ...(splitType === "equal"
-          ? { participantIds }
-          : { splits: members.map((m) => ({ userId: m.user_id, amount: parseFloat(customSplits[m.user_id] || "0") })) }),
-      });
+      if (expense) await apiAuthPut(`/api/rooms/${roomId}/expenses/${expense.id}`, body);
+      else await apiAuthPost(`/api/rooms/${roomId}/expenses`, body);
       onAdded();
     } catch (err) {
-      setError(errorMessage(err, "Failed to add expense"));
+      setError(errorMessage(err, expense ? "Couldn't save the changes" : "Failed to add expense"));
     } finally {
       setSubmitting(false);
     }
@@ -140,7 +156,7 @@ export function AddExpenseForm({ roomId, members, onAdded }: { roomId: string; m
 
       <FormMessage error={error} />
       <Button type="submit" variant="dark" loading={submitting} disabled={customMismatch || nobody}>
-        {submitting ? "Adding..." : "Add expense"}
+        {expense ? (submitting ? "Saving..." : "Save changes") : submitting ? "Adding..." : "Add expense"}
       </Button>
     </form>
   );

@@ -49,6 +49,22 @@ export interface Expense {
   category_name: string | null;
   /** How many people it's split between. */
   shared_by: number;
+  /** Last changed (null = never edited). */
+  edited_at: string | null;
+}
+
+/** One expense with its shares, for the edit form (GET /api/rooms/:id/expenses/:expenseId). */
+export interface ExpenseDetail {
+  id: string;
+  description: string;
+  amountPaise: number;
+  paidBy: string;
+  expenseDate: string;
+  categoryId: string | null;
+  splitType: "equal" | "custom";
+  participantIds: string[];
+  splits: { userId: string; sharePaise: number }[];
+  canEdit: boolean;
 }
 
 /** A bill section of a room and who shares it (GET /api/rooms/:id/categories). */
@@ -404,6 +420,7 @@ export interface OnboardingCounts {
 export type ActivityType =
   | "expense_added"
   | "expense_deleted"
+  | "expense_edited"
   | "payment_recorded"
   | "payment_deleted"
   | "fund_opened"
@@ -442,6 +459,14 @@ export interface ActivityEvent {
     kind?: string;
     /** join_requested: the requester's name (they aren't a member yet). */
     name?: string;
+    /** expense_edited: what changed, each as [old, new]. Empty = only who shares it. */
+    changes?: {
+      description?: [string, string];
+      amount_paise?: [number, number];
+      expense_date?: [string, string];
+      paid_by?: [string | null, string | null];
+      category?: [string | null, string | null];
+    };
   };
   created_at: string;
   /** Someone else did it after I last opened the feed. */

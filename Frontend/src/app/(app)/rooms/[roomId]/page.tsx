@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Plus, UserPlus, UserMinus, Receipt, Trash2, Users as UsersIcon } from "lucide-react";
-import { apiAuthDelete, errorMessage } from "@/lib/api";
+import { ArrowLeft, Plus, UserPlus, UserMinus, Receipt, Pencil, Trash2, Users as UsersIcon } from "lucide-react";
+import { apiAuthDelete, apiAuthGet, errorMessage } from "@/lib/api";
 import { FormMessage } from "@/components/ui/FormMessage";
 import { rupees, formatDate } from "@/lib/format";
 import { useApiQuery, usePagedQuery } from "@/lib/useApiQuery";
 import { useLiveRefresh } from "@/lib/live";
-import type { RoomDetail, Member, Expense, RoomBalances, Fund, Category } from "@/lib/types";
+import type { RoomDetail, Member, Expense, ExpenseDetail, RoomBalances, Fund, Category } from "@/lib/types";
 import { useAuthStore } from "@/store/authStore";
 import { useRoomsStore } from "@/store/roomsStore";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -39,6 +39,8 @@ export default function RoomPage() {
   const [modal, setModal] = useState<"expense" | "invite" | null>(null);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [expenseError, setExpenseError] = useState<string | null>(null);
+  // The expense being edited (its full details, shares included), or null.
+  const [editing, setEditing] = useState<ExpenseDetail | null>(null);
   const confirm = useConfirm();
 
   // Four independent requests, fired in parallel.
@@ -103,6 +105,22 @@ export default function RoomPage() {
     // The new expense is the newest, i.e. on page 1.
     if (expensePage === 1) expensesQuery.reload();
     else setExpensePage(1);
+    onMoneyChanged();
+  }
+
+  async function startEditing(exp: Expense) {
+    setExpenseError(null);
+    try {
+      setEditing(await apiAuthGet<ExpenseDetail>(`/api/rooms/${roomId}/expenses/${exp.id}`));
+    } catch (err) {
+      setExpenseError(errorMessage(err, "Couldn't open the expense"));
+    }
+  }
+
+  function onExpenseEdited() {
+    setEditing(null);
+    // An edit can change the date, so the list order; stay on this page.
+    expensesQuery.reload();
     onMoneyChanged();
   }
 
@@ -226,6 +244,7 @@ export default function RoomPage() {
                     <p className="text-xs text-foreground/50">
                       Paid by {exp.paid_by === user?.id ? "you" : exp.paid_by_name}
                       {exp.shared_by > 0 && exp.shared_by < members.length && ` · split ${exp.shared_by} ways`}
+                      {exp.edited_at && <span title={`Edited ${formatDate(exp.edited_at)}`}> · edited</span>}
                     </p>
                     {exp.category_name && (
                       <span className="inline-block mt-1">
@@ -235,13 +254,22 @@ export default function RoomPage() {
                   </div>
                   <p className="font-semibold">{rupees(Number(exp.amount_paise))}</p>
                   {(isAdmin || exp.created_by === user?.id) && (
-                    <button
-                      onClick={() => handleDeleteExpense(exp)}
-                      className="p-1.5 rounded-full text-foreground/35 hover:text-danger hover:bg-danger/10 shrink-0"
-                      aria-label={`Delete ${exp.description}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex shrink-0">
+                      <button
+                        onClick={() => startEditing(exp)}
+                        className="p-1.5 rounded-full text-foreground/35 hover:text-primary hover:bg-primary/10"
+                        aria-label={`Edit ${exp.description}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteExpense(exp)}
+                        className="p-1.5 rounded-full text-foreground/35 hover:text-danger hover:bg-danger/10"
+                        aria-label={`Delete ${exp.description}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
                 </li>
               ))}
@@ -326,6 +354,12 @@ export default function RoomPage() {
           members={members}
           onAdded={onExpenseAdded}
         />
+      </Modal>
+      <Modal open={editing !== null} onClose={() => setEditing(null)} title="Edit expense">
+        {editing && (
+          // key: a fresh form per expense, so it starts from that expense's values.
+          <AddExpenseForm key={editing.id} roomId={roomId} members={members} expense={editing} onAdded={onExpenseEdited} />
+        )}
       </Modal>
       {room.invite_code && (
         <Modal open={modal === "invite"} onClose={() => setModal(null)} title={`Invite to ${room.name}`}>

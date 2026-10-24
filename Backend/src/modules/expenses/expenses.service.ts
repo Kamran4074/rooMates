@@ -8,69 +8,204 @@ import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
 import { getMemberIds, requireMember } from "../rooms/rooms.repository";
 import { getCategory } from "../categories/categories.service";
 
-export async function createExpense(userId: string, roomId: string, input: CreateExpenseInput) {
+type Split = { userId: string; sharePaise: number };
+
+// Payer, date, section and shares for an expense, checked against the room's
+// current members. Adding and editing go through this, so both follow the
+// same rules.
+async function resolveExpense(client: PoolClient, roomId: string, userId: string, input: CreateExpenseInput) {
   const amountPaise = toPaise(input.amount);
+  // RLS hides rooms the caller isn't in, so this 404s for someone else's room.
+  const memberIds = new Set(await getMemberIds(client, roomId));
 
-  return withUserContext(userId, async (client) => {
-    // RLS hides rooms the caller isn't in, so this 404s for someone else's room.
-    const memberIds = new Set(await getMemberIds(client, roomId));
+  // Anyone in the room can record that someone else paid ("Bhavya bought the
+  // milk"), like in Splitwise; the payer just has to be in the room.
+  const paidBy = input.paidBy ?? userId;
+  if (!memberIds.has(paidBy)) throw new AppError("Whoever paid must be a member of this room", 400);
+  const expenseDate = input.expenseDate ?? todayInIndia();
 
-    // Anyone in the room can record that someone else paid ("Bhavya bought the
-    // milk"), like in Splitwise; the payer just has to be in the room.
-    const paidBy = input.paidBy ?? userId;
-    if (!memberIds.has(paidBy)) throw new AppError("Whoever paid must be a member of this room", 400);
-    const expenseDate = input.expenseDate ?? todayInIndia();
+  // A section (Rent, Groceries...) decides who shares the bill by default.
+  const category = input.categoryId ? await getCategory(client, roomId, input.categoryId) : null;
 
-    // A section (Rent, Groceries...) decides who shares the bill by default.
-    const category = input.categoryId ? await getCategory(client, roomId, input.categoryId) : null;
+  let splits: Split[];
+  if (input.splitType === "equal") {
+    // Equal split between the people sharing it: chosen for this expense,
+    // else the section's people, else everyone in the room.
+    const sharing = [...new Set(input.participantIds ?? category?.member_ids ?? [...memberIds])];
+    if (sharing.length === 0) throw new AppError("Nobody is in this section yet. Pick who shares this expense.", 400);
+    if (sharing.some((id) => !memberIds.has(id))) throw new AppError("Everyone sharing it must be a member of this room", 400);
+    splits = splitEqually(amountPaise, sharing);
+  } else {
+    splits = input.splits!.map((s) => ({ userId: s.userId, sharePaise: toPaise(s.amount) }));
 
-    let splits: { userId: string; sharePaise: number }[];
-    if (input.splitType === "equal") {
-      // Equal split between the people sharing it: chosen for this expense,
-      // else the section's people, else everyone in the room.
-      const sharing = [...new Set(input.participantIds ?? category?.member_ids ?? [...memberIds])];
-      if (sharing.length === 0) throw new AppError("Nobody is in this section yet. Pick who shares this expense.", 400);
-      if (sharing.some((id) => !memberIds.has(id))) throw new AppError("Everyone sharing it must be a member of this room", 400);
-      splits = splitEqually(amountPaise, sharing);
-    } else {
-      splits = input.splits!.map((s) => ({ userId: s.userId, sharePaise: toPaise(s.amount) }));
-
-      // Shares must belong to room members, once each. A share assigned to an
-      // outsider would make the room's balances stop summing to zero, which
-      // breaks the settle-up plan for everyone in the room.
-      const seen = new Set<string>();
-      for (const s of splits) {
-        if (!memberIds.has(s.userId)) throw new AppError("Every split must be for a member of this room", 400);
-        if (seen.has(s.userId)) throw new AppError("Each member can appear only once in the splits", 400);
-        seen.add(s.userId);
-      }
-
-      const splitTotal = splits.reduce((sum, s) => sum + s.sharePaise, 0);
-      if (splitTotal !== amountPaise) {
-        throw new AppError(
-          `Split amounts (${splitTotal / 100}) must add up to the total expense amount (${amountPaise / 100})`,
-          400
-        );
-      }
+    // Shares must belong to room members, once each. A share assigned to an
+    // outsider would make the room's balances stop summing to zero, which
+    // breaks the settle-up plan for everyone in the room.
+    const seen = new Set<string>();
+    for (const s of splits) {
+      if (!memberIds.has(s.userId)) throw new AppError("Every split must be for a member of this room", 400);
+      if (seen.has(s.userId)) throw new AppError("Each member can appear only once in the splits", 400);
+      seen.add(s.userId);
     }
+
+    const splitTotal = splits.reduce((sum, s) => sum + s.sharePaise, 0);
+    if (splitTotal !== amountPaise) {
+      throw new AppError(
+        `Split amounts (${splitTotal / 100}) must add up to the total expense amount (${amountPaise / 100})`,
+        400
+      );
+    }
+  }
+
+  return { amountPaise, paidBy, expenseDate, categoryId: category?.id ?? null, splits, memberIds };
+}
+
+async function insertSplits(client: PoolClient, expenseId: string, roomId: string, splits: Split[]) {
+  // One round trip for all shares instead of one INSERT per member.
+  await client.query(
+    // room_id must match the expense's room - a composite foreign key checks it.
+    `INSERT INTO expense_splits (expense_id, room_id, user_id, share_paise)
+     SELECT $1, $2, s.user_id, s.share_paise FROM unnest($3::uuid[], $4::bigint[]) AS s(user_id, share_paise)`,
+    [expenseId, roomId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
+  );
+}
+
+export async function createExpense(userId: string, roomId: string, input: CreateExpenseInput) {
+  return withUserContext(userId, async (client) => {
+    const { amountPaise, paidBy, expenseDate, categoryId, splits } = await resolveExpense(client, roomId, userId, input);
 
     // The id comes from the database (uuidv7: time-ordered, index-friendly).
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO expenses (room_id, paid_by, description, amount_paise, expense_date, created_by, category_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [roomId, paidBy, input.description, amountPaise, expenseDate, userId, category?.id ?? null]
+      [roomId, paidBy, input.description, amountPaise, expenseDate, userId, categoryId]
     );
     const expenseId = inserted.rows[0].id;
+    await insertSplits(client, expenseId, roomId, splits);
 
-    // One round trip for all shares instead of one INSERT per member.
+    return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, categoryId, splits };
+  });
+}
+
+interface ExpenseRow {
+  id: string;
+  description: string;
+  amount_paise: string;
+  paid_by: string;
+  expense_date: string;
+  category_id: string | null;
+  created_by: string;
+  edited_at: string | null;
+}
+
+async function loadExpense(client: PoolClient, roomId: string, expenseId: string) {
+  const { rows } = await client.query<ExpenseRow>(
+    `SELECT id, description, amount_paise, paid_by, expense_date::text AS expense_date, category_id, created_by, edited_at
+     FROM expenses WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL`,
+    [expenseId, roomId]
+  );
+  if (!rows[0]) throw new AppError("Expense not found", 404);
+  const splits = await client.query<{ user_id: string; share_paise: string }>(
+    "SELECT user_id, share_paise FROM expense_splits WHERE expense_id = $1 ORDER BY user_id",
+    [expenseId]
+  );
+  return {
+    expense: rows[0],
+    splits: splits.rows.map((s) => ({ userId: s.user_id, sharePaise: Number(s.share_paise) })),
+  };
+}
+
+// The split type isn't stored. Equal splits differ by at most one paisa
+// (the remainder of dividing), so anything else was typed in as custom.
+// Only used to pre-fill the edit form.
+function looksEqual(splits: Split[]) {
+  const shares = splits.map((s) => s.sharePaise);
+  return shares.length > 0 && Math.max(...shares) - Math.min(...shares) <= 1;
+}
+
+// One expense with its shares - what the edit form starts from.
+export async function getExpense(userId: string, roomId: string, expenseId: string) {
+  return withUserContext(userId, async (client) => {
+    const role = await requireMember(client, roomId, userId);
+    const { expense, splits } = await loadExpense(client, roomId, expenseId);
+    const equal = looksEqual(splits);
+    return {
+      id: expense.id,
+      description: expense.description,
+      amountPaise: Number(expense.amount_paise),
+      paidBy: expense.paid_by,
+      expenseDate: expense.expense_date,
+      categoryId: expense.category_id,
+      createdBy: expense.created_by,
+      editedAt: expense.edited_at,
+      splitType: equal ? ("equal" as const) : ("custom" as const),
+      participantIds: equal ? splits.map((s) => s.userId) : splits.filter((s) => s.sharePaise > 0).map((s) => s.userId),
+      splits,
+      canEdit: expense.created_by === userId || role === "admin",
+    };
+  });
+}
+
+const sameSplits = (a: Split[], b: Split[]) => {
+  const key = (list: Split[]) =>
+    list
+      .filter((s) => s.sharePaise > 0)
+      .map((s) => `${s.userId}:${s.sharePaise}`)
+      .sort()
+      .join(",");
+  return key(a) === key(b);
+};
+
+// Edit = replace the expense's details and shares, keeping its id. Same
+// people as delete (whoever added it or the room admin), same checks as
+// adding. The activity trigger records what changed, old and new.
+export async function updateExpense(userId: string, roomId: string, expenseId: string, input: CreateExpenseInput) {
+  return withUserContext(userId, async (client) => {
+    const role = await requireMember(client, roomId, userId);
+    // Lock first, read second: of two edits at once, the second waits here and
+    // then reads what the first saved. (For someone who may not edit, RLS
+    // makes this lock nothing; the check below turns that into a 403.)
+    await client.query("SELECT 1 FROM expenses WHERE id = $1 FOR UPDATE", [expenseId]);
+    const { expense, splits: oldSplits } = await loadExpense(client, roomId, expenseId);
+    if (expense.created_by !== userId && role !== "admin") {
+      throw new AppError("Only whoever added this expense or the room admin can edit it", 403);
+    }
+
+    const next = await resolveExpense(client, roomId, userId, input);
+
+    // Someone who left had to settle to zero first. Changing what they paid
+    // or owe now would give them a balance they can no longer settle.
+    const involved = [expense.paid_by, ...oldSplits.filter((s) => s.sharePaise > 0).map((s) => s.userId)];
+    if (involved.some((id) => !next.memberIds.has(id))) {
+      throw new AppError(
+        "Someone on this expense has left the room, so it can't be changed - their balance was already settled.",
+        409
+      );
+    }
+
+    const splitsChanged = !sameSplits(oldSplits, next.splits);
+    const unchanged =
+      !splitsChanged &&
+      expense.description === input.description &&
+      Number(expense.amount_paise) === next.amountPaise &&
+      expense.paid_by === next.paidBy &&
+      expense.expense_date === next.expenseDate &&
+      expense.category_id === next.categoryId;
+    // Nothing to save: no write, no "edited" entry in the feed.
+    if (unchanged) return { id: expenseId, changed: false };
+
+    if (splitsChanged) {
+      await client.query("DELETE FROM expense_splits WHERE expense_id = $1", [expenseId]);
+      await insertSplits(client, expenseId, roomId, next.splits);
+    }
     await client.query(
-      // room_id must match the expense's room - a composite foreign key checks it.
-      `INSERT INTO expense_splits (expense_id, room_id, user_id, share_paise)
-       SELECT $1, $2, s.user_id, s.share_paise FROM unnest($3::uuid[], $4::bigint[]) AS s(user_id, share_paise)`,
-      [expenseId, roomId, splits.map((s) => s.userId), splits.map((s) => s.sharePaise)]
+      `UPDATE expenses
+       SET description = $2, amount_paise = $3, paid_by = $4, expense_date = $5, category_id = $6,
+           edited_at = now(), edited_by = $7
+       WHERE id = $1`,
+      [expenseId, input.description, next.amountPaise, next.paidBy, next.expenseDate, next.categoryId, userId]
     );
-
-    return { id: expenseId, description: input.description, amountPaise, paidBy, expenseDate, categoryId: category?.id ?? null, splits };
+    return { id: expenseId, changed: true };
   });
 }
 
@@ -100,7 +235,7 @@ export async function listExpenses(userId: string, roomId: string, params: PageP
       // LEFT JOIN: once someone leaves the room, RLS hides their user row, but
       // the expenses they paid for are still part of the room's history.
       `SELECT e.id, e.description, e.amount_paise, e.paid_by, e.expense_date::text AS expense_date, e.created_at,
-              e.created_by, COALESCE(u.name, 'Former member') AS paid_by_name,
+              e.created_by, e.edited_at, COALESCE(u.name, 'Former member') AS paid_by_name,
               c.name AS category_name,
               (SELECT COUNT(*)::int FROM expense_splits es WHERE es.expense_id = e.id AND es.share_paise > 0) AS shared_by,
               COUNT(*) OVER() AS total_count

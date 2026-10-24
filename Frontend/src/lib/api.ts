@@ -133,7 +133,7 @@ export async function apiAuthGetPage<T>(path: string): Promise<Page<T>> {
   return { items: body.data, pagination: body.pagination };
 }
 
-async function authSend<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
+async function authSend<T>(method: "POST" | "PATCH" | "PUT", path: string, body: unknown): Promise<T> {
   const res = await authFetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
@@ -144,6 +144,7 @@ async function authSend<T>(method: "POST" | "PATCH", path: string, body: unknown
 
 export const apiAuthPost = <T>(path: string, body: unknown) => authSend<T>("POST", path, body);
 export const apiAuthPatch = <T>(path: string, body: unknown) => authSend<T>("PATCH", path, body);
+export const apiAuthPut = <T>(path: string, body: unknown) => authSend<T>("PUT", path, body);
 
 export async function apiAuthDelete(path: string): Promise<void> {
   await handleResponse(await authFetch(path, { method: "DELETE" }));

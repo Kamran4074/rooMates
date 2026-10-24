@@ -329,6 +329,37 @@ registry.registerPath({
   },
 });
 
+const expenseParams = z.object({ roomId: z.string().uuid(), expenseId: z.string().uuid() });
+
+registry.registerPath({
+  method: "get",
+  path: "/api/rooms/{roomId}/expenses/{expenseId}",
+  tags: ["Expenses"],
+  summary: "One expense with its shares, for the edit form (splitType is inferred: shares within one paisa = equal). canEdit says whether you may change it",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { params: expenseParams },
+  responses: {
+    200: { description: "The expense" },
+    404: { description: "No such (live) expense in this room", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/rooms/{roomId}/expenses/{expenseId}",
+  tags: ["Expenses"],
+  summary: "Edit an expense: full replacement, same body and checks as adding one. Whoever added it or the room admin. The room's activity feed records what changed; saving with no changes writes nothing",
+  security: [{ [bearerAuth.name]: [] }],
+  request: { params: expenseParams, body: { content: { "application/json": { schema: createExpenseSchema } } } },
+  responses: {
+    200: { description: "Saved (changed: true) or nothing to save (changed: false)" },
+    400: { description: "Validation failed (same rules as adding)", content: { "application/json": { schema: errorResponseSchema } } },
+    403: { description: "Not yours and you're not the room admin", content: { "application/json": { schema: errorResponseSchema } } },
+    404: { description: "No such (live) expense in this room", content: { "application/json": { schema: errorResponseSchema } } },
+    409: { description: "Someone on the expense has left the room", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "delete",
   path: "/api/rooms/{roomId}/expenses/{expenseId}",

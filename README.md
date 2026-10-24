@@ -51,6 +51,7 @@ It's a modular monolith: one Express API, one Postgres database. The focus is on
 - Equal or custom splits, live balances, and a settle-up plan with at most *n − 1* payments
 - **Settle up for real:** "Mark as paid" on a suggested payment (or record any payment) and the balances update. One of the two people or the room admin records it
 - Delete a wrong expense or payment (whoever added it, or the room admin). It's a soft delete: the record stays with who deleted it and when
+- **Edit an expense** (whoever added it, or the room admin): amount, description, payer, date, section and split. Balances update at once; the room's feed records exactly what changed, old → new ("₹900 → ₹1,200, date 3 Oct → 5 Oct"), and the expense shows "edited". Refused when someone on it has since left the room, since their balance was already settled. Rewriting shares is limited by RLS to the same people
 - Room fund ("kitty"): ₹X per person - always everyone in the room - paid upfront to one collector, partial payments, spending from the pool. **A payment counts only when both sides agree:** a member's own record is confirmed by the collector; a payment the collector/admin records for a member is approved by that member (they get a notification on Dashboard/Expenses and a sidebar badge) or disputed with a reason. Disputed entries never count and can't be deleted; the history shows who recorded, who approved and when. Closing the fund settles the leftover so everyone paid an equal share of what was spent
 - Monthly expenses view and month-by-month history across rooms
 
@@ -457,7 +458,7 @@ npm run test:api    # API integration tests: real app + a LOCAL database; create
 #   npm run migrate up; npm run test:api
 ```
 
-**36 unit tests and 107 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), plans (Basic locks, upgrade requests, admin approval for the period paid, renewals that extend, expiry back to Basic, the admin pricing editor), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
+**36 unit tests and 116 API tests.** The API tests cover registration/verification/login, refresh-token rotation, the super admin seed, room isolation, expense payer/date, soft deletes, settle-up payments, the shared ledger, bill sections, two-sided fund payments (approve/dispute), plans (Basic locks, upgrade requests, admin approval for the period paid, renewals that extend, expiry back to Basic, the admin pricing editor), rate limits (per user, join requests, WebSocket handshakes), room size limits per plan (including four simultaneous approvals for three free seats), join approval (including that the database itself refuses a self-insert into a room), the activity log (including that the app can't write to it, and that a new member's feed starts when they joined) and live updates over WebSocket (auth, origin check, room-only delivery), listing ownership (Owner B can't edit Owner A's listing), owners being unable to self-publish, search and "near me", the request flow, reports, admin access control, moderation, suspension, user deletion, the onboarding tracker, the CSV export and the admin room view.
 
 **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to `main` and every pull request:
 
@@ -488,7 +489,6 @@ On a VPS instead: run the backend with PM2 (`pm2 start dist/index.js --name room
 
 - Redis-backed rate limits once there's more than one server instance
 - Listing expiry (e.g. auto-hide after 60 days) via a scheduled job
-- Edit an expense (today: delete and re-add)
 - Push notifications (web push / email digest) for people who aren't on the site
 - Phone number verification by SMS OTP
 - PostGIS if location search needs more than radius queries

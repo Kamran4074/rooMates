@@ -13,6 +13,7 @@ import {
   UserMinus,
   UserPlus,
   UserX,
+  Pencil,
 } from "lucide-react";
 import { describeActivity } from "@/lib/activityText";
 import type { ActivityEvent } from "@/lib/types";
@@ -23,6 +24,7 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: 
 const ICONS: Record<ActivityEvent["type"], { icon: typeof Receipt; tone: string }> = {
   expense_added: { icon: Receipt, tone: "bg-primary/10 text-primary" },
   expense_deleted: { icon: Trash2, tone: "bg-danger/10 text-danger" },
+  expense_edited: { icon: Pencil, tone: "bg-accent/15 text-accent" },
   payment_recorded: { icon: ArrowRightLeft, tone: "bg-success/10 text-success" },
   payment_deleted: { icon: Trash2, tone: "bg-danger/10 text-danger" },
   fund_opened: { icon: PiggyBank, tone: "bg-accent/15 text-accent" },

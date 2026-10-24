@@ -6,6 +6,8 @@ import { createExpenseSchema, monthExpensesQuerySchema, monthlySummaryQuerySchem
 import {
   createExpense,
   deleteExpense,
+  getExpense,
+  updateExpense,
   listExpenses,
   getRoomBalances,
   listMyExpenses,
@@ -17,6 +19,19 @@ export async function handleCreateExpense(req: Request, res: Response) {
   const roomId = roomIdParam.parse(req.params.roomId);
   const expense = await createExpense(req.auth!.sub, roomId, createExpenseSchema.parse(req.body));
   sendCreated(res, expense, "Expense added");
+}
+
+export async function handleGetExpense(req: Request, res: Response) {
+  const roomId = roomIdParam.parse(req.params.roomId);
+  sendSuccess(res, await getExpense(req.auth!.sub, roomId, uuidParam("expense").parse(req.params.expenseId)));
+}
+
+// Full replacement: the body is the same as adding an expense.
+export async function handleUpdateExpense(req: Request, res: Response) {
+  const roomId = roomIdParam.parse(req.params.roomId);
+  const expenseId = uuidParam("expense").parse(req.params.expenseId);
+  const result = await updateExpense(req.auth!.sub, roomId, expenseId, createExpenseSchema.parse(req.body));
+  sendSuccess(res, result, { message: result.changed ? "Expense updated" : "Nothing changed" });
 }
 
 export async function handleDeleteExpense(req: Request, res: Response) {
