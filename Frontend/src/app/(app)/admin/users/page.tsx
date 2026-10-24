@@ -17,6 +17,7 @@ import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { OwnerGroups } from "@/components/admin/OwnerGroups";
+import { GroupsTable } from "@/components/admin/GroupsTable";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormMessage } from "@/components/ui/FormMessage";
@@ -33,6 +34,7 @@ type Sort = "newest" | "oldest" | "last_active" | "least_active";
 // group yet) are the rows; expanding one shows their groups and members.
 // "All accounts" (or any search) lists everyone flat. Each row has contact,
 // groups, last active, an on/off switch (suspend / restore), view / delete.
+// "Groups" switches the table to one row per group (GroupsTable).
 export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -42,7 +44,7 @@ export default function AdminUsersPage() {
   const [action, setAction] = useState<UserAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [view, setView] = useState<"owners" | "all">("owners");
+  const [view, setView] = useState<"owners" | "all" | "groups">("owners");
   const searchBox = useDebouncedSearch((term) => {
     setSearch(term);
     setPage(1);
@@ -53,8 +55,9 @@ export default function AdminUsersPage() {
   // owner, so the owners view would hide them.
   const grouped = view === "owners" && !search;
   const filters = new URLSearchParams({ sort, ...(search && { search }), ...(status && { status }) });
+  const showGroups = view === "groups";
   const { data, error: loadError, reload } = usePagedQuery<AdminUser>(
-    `/api/admin/users?${filters}&page=${page}&limit=${limit}${grouped ? "&view=owners" : ""}`
+    showGroups ? null : `/api/admin/users?${filters}&page=${page}&limit=${limit}${grouped ? "&view=owners" : ""}`
   );
   const totalAccounts = useApiQuery<{ total_users: number }>("/api/admin/stats").data?.total_users;
 
@@ -110,16 +113,20 @@ export default function AdminUsersPage() {
       <PageHeader
         title="Users"
         subtitle={
-          totalAccounts === undefined
+          showGroups
+            ? "Every group (flats and trips), who runs it and who's in it."
+            : totalAccounts === undefined
             ? undefined
             : `${totalAccounts} ${totalAccounts === 1 ? "account" : "accounts"}${
                 grouped && data ? ` · ${data.pagination.total} shown (group owners and people in no group)` : ""
               }`
         }
         actions={
-          <Button size="sm" onClick={exportCsv} loading={exporting}>
-            <Download className="h-4 w-4" /> Export CSV
-          </Button>
+          !showGroups && (
+            <Button size="sm" onClick={exportCsv} loading={exporting}>
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+          )
         }
       />
 
@@ -131,24 +138,25 @@ export default function AdminUsersPage() {
           <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/40 pointer-events-none" />
           <input
             type="search"
-            aria-label="Search users"
+            aria-label={showGroups ? "Search groups" : "Search users"}
             value={searchBox.draft}
             onChange={(e) => searchBox.onChange(e.target.value)}
-            placeholder="Search name, email or mobile"
+            placeholder={showGroups ? "Search group name, or owner name or email" : "Search name, email or mobile"}
             className="w-full h-11 pl-10 pr-4 rounded-full border border-card-border bg-card text-sm outline-none focus:border-primary"
           />
         </form>
-        <div className="w-64">
+        <div className="w-96 max-w-full">
           <SegmentedControl
             value={view}
             onChange={(v) => { setView(v); setPage(1); setExpanded(new Set()); }}
             options={[
               { value: "owners", label: "Group owners" },
               { value: "all", label: "All accounts" },
+              { value: "groups", label: "Groups" },
             ]}
           />
         </div>
-        <div className="w-44">
+        <div className={`w-44 ${showGroups ? "hidden" : ""}`}>
           <Select aria-label="Status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
             <option value="">Everyone</option>
             <option value="active">Active (30 days)</option>
@@ -163,7 +171,9 @@ export default function AdminUsersPage() {
       )}
       <FormMessage error={error} />
 
-      {loadError ? (
+      {showGroups ? (
+        <GroupsTable key={search} search={search} />
+      ) : loadError ? (
         <p className="text-danger">{loadError}</p>
       ) : !data ? (
         <LoadingState />

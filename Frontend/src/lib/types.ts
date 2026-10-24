@@ -293,6 +293,39 @@ export interface Me {
 // ---------------- Admin ----------------
 
 /** A row in the super admin's users list. */
+/** A person in a group, as the admin console shows them. */
+export interface AdminGroupMember {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  picture: string | null;
+  role: "admin" | "member";
+  joined_at: string;
+  last_active_at: string | null;
+  suspended_at: string | null;
+  deleted_at: string | null;
+}
+
+/** A row of the admin Groups tab (GET /api/admin/rooms). */
+export interface AdminGroup {
+  id: string;
+  name: string;
+  type: RoomType;
+  created_at: string;
+  created_by_name: string | null;
+  /** Who runs it now - may differ from the creator after a hand-over. */
+  owner_id: string | null;
+  owner_name: string | null;
+  owner_email: string | null;
+  owner_picture: string | null;
+  member_count: number;
+  members: AdminGroupMember[];
+  expense_count: number;
+  total_spent_paise: number;
+  last_expense_at: string | null;
+}
+
 export interface AdminUser {
   id: string;
   name: string;

@@ -4,7 +4,7 @@ import { logger } from "../../config/logger";
 import { BILLING_MONTHS, BillingCycle, Plan } from "../../config/plans";
 import { listPlans, PlanRow, toPlanInfo } from "../plans/plans.repository";
 import { toPaise } from "../../utils/money";
-import type { PlanCatalogInput } from "./admin.schema";
+import type { PlanCatalogInput, RoomSort } from "./admin.schema";
 import { AppError } from "../../middlewares/errorHandler";
 import { PageParams, paginate, toLimitOffset } from "../../utils/pagination";
 import { computeRoomBalances } from "../expenses/expenses.service";
@@ -562,16 +562,53 @@ export async function resolveReport(adminId: string, reportId: string, action: "
 // Lets a super admin see exactly what a room's members see - for support.
 // Read-only on purpose: an admin never adds or edits expenses in someone's room.
 
-export async function listRooms(search: string | undefined, page: PageParams) {
+// Whitelisted ORDER BY per sort (never built from user input). r.id breaks
+// ties so paging is stable.
+const ROOM_ORDER: Record<RoomSort, string> = {
+  newest: "r.created_at DESC, r.id",
+  oldest: "r.created_at ASC, r.id",
+  largest: "mem.member_count DESC, r.created_at DESC, r.id",
+  most_spent: "e.total_spent_paise DESC, r.created_at DESC, r.id",
+  recent_activity: "e.last_expense_at DESC NULLS LAST, r.created_at DESC, r.id",
+};
+
+// Every group, for the admin's Groups tab and Groups page: who runs it now
+// (the room admin - may differ from the creator after a hand-over), size,
+// spending, last activity and the members (shown when a row is expanded,
+// so it needs no second request). Search matches the group's name or its
+// owner's name/email.
+export async function listRooms(search: string | undefined, sort: RoomSort, page: PageParams) {
   const { limit, offset } = toLimitOffset(page);
   const { rows } = await adminPool.query(
-    `SELECT r.id, r.name, r.type, r.created_at, u.name AS created_by_name,
-            (SELECT COUNT(*)::int FROM room_members m WHERE m.room_id = r.id) AS member_count,
-            (SELECT COUNT(*)::int FROM expenses e WHERE e.room_id = r.id AND e.deleted_at IS NULL) AS expense_count,
+    `SELECT r.id, r.name, r.type, r.created_at, cu.name AS created_by_name,
+            o.id AS owner_id, o.name AS owner_name, o.picture AS owner_picture,
+            CASE WHEN o.deleted_at IS NULL THEN o.email END AS owner_email,
+            mem.member_count, mem.members,
+            e.expense_count, e.total_spent_paise, e.last_expense_at,
             COUNT(*) OVER() AS total_count
-     FROM rooms r LEFT JOIN users u ON u.id = r.created_by
-     WHERE ($1::text IS NULL OR r.name ILIKE '%' || $1 || '%')
-     ORDER BY r.created_at DESC
+     FROM rooms r
+     LEFT JOIN users cu ON cu.id = r.created_by
+     LEFT JOIN room_members om ON om.room_id = r.id AND om.role = 'admin'
+     LEFT JOIN users o ON o.id = om.user_id
+     CROSS JOIN LATERAL (
+       SELECT COUNT(*)::int AS member_count,
+              COALESCE(json_agg(json_build_object(
+                'id', u.id, 'name', u.name, 'email', CASE WHEN u.deleted_at IS NULL THEN u.email END,
+                'phone', u.phone, 'picture', u.picture, 'role', m.role, 'joined_at', m.joined_at,
+                'last_active_at', u.last_active_at, 'suspended_at', u.suspended_at, 'deleted_at', u.deleted_at
+              ) ORDER BY m.role = 'admin' DESC, m.joined_at), '[]') AS members
+       FROM room_members m JOIN users u ON u.id = m.user_id
+       WHERE m.room_id = r.id
+     ) mem
+     CROSS JOIN LATERAL (
+       SELECT COUNT(*)::int AS expense_count,
+              COALESCE(SUM(x.amount_paise), 0)::float8 AS total_spent_paise,
+              MAX(x.created_at) AS last_expense_at
+       FROM expenses x
+       WHERE x.room_id = r.id AND x.deleted_at IS NULL
+     ) e
+     WHERE ($1::text IS NULL OR r.name ILIKE '%' || $1 || '%' OR o.name ILIKE '%' || $1 || '%' OR o.email ILIKE '%' || $1 || '%')
+     ORDER BY ${ROOM_ORDER[sort]}
      LIMIT $2 OFFSET $3`,
     [search || null, limit, offset]
   );

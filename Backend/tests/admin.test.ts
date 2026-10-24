@@ -1,6 +1,6 @@
 import { adminPool } from "../src/config/db";
 import { sha256 } from "../src/utils/hash";
-import { api, cleanup, createUser, refreshWith, startServer, TestUser, validListing } from "./helpers";
+import { api, cleanup, createUser, joinRoom, refreshWith, startServer, TestUser, validListing } from "./helpers";
 
 let user: TestUser, owner: TestUser, admin: TestUser;
 
@@ -109,5 +109,27 @@ describe("room support view", () => {
     expect(view.status).toBe(200);
     expect(view.body.data.recent_expenses).toHaveLength(1);
     expect(view.body.data.balances).toHaveLength(1);
+  });
+
+  it("the groups list shows owner, members and spending, and searches by owner", async () => {
+    const [runner, flatmate] = await Promise.all([createUser(), createUser()]);
+    const room = await api(runner, "POST", "/api/rooms", { name: `Groups tab ${runner.id.slice(0, 6)}`, type: "roommates" });
+    await joinRoom(flatmate, room.body.data.inviteCode);
+    await api(runner, "POST", `/api/rooms/${room.body.data.id}/expenses`, { description: "Rent", amount: 900, splitType: "equal" });
+
+    // Found by the owner's email, not just the group name.
+    const res = await api(admin, "GET", `/api/admin/rooms?search=${encodeURIComponent(runner.email)}&sort=largest`);
+    expect(res.status).toBe(200);
+    const group = res.body.data.find((g: { id: string }) => g.id === room.body.data.id);
+    expect(group).toEqual(
+      expect.objectContaining({ owner_id: runner.id, member_count: 2, expense_count: 1, total_spent_paise: 90000 })
+    );
+    expect(group.last_expense_at).toEqual(expect.any(String));
+    expect(group.members.map((m: { id: string; role: string }) => [m.id, m.role])).toEqual([
+      [runner.id, "admin"], // owner first
+      [flatmate.id, "member"],
+    ]);
+
+    expect((await api(admin, "GET", "/api/admin/rooms?sort=DROP TABLE")).status).toBe(400);
   });
 });

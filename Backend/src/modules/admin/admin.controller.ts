@@ -141,8 +141,8 @@ export async function handleResolveReport(req: Request, res: Response) {
 }
 
 export async function handleRooms(req: Request, res: Response) {
-  const { search, page, limit } = roomsQuery.parse(req.query);
-  const { data, pagination } = await admin.listRooms(search, { page, limit });
+  const { search, sort, page, limit } = roomsQuery.parse(req.query);
+  const { data, pagination } = await admin.listRooms(search, sort, { page, limit });
   sendSuccess(res, data, { pagination });
 }
 

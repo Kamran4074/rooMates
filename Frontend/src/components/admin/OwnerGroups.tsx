@@ -1,33 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { timeAgo } from "@/lib/format";
 import { useApiQuery } from "@/lib/useApiQuery";
-import type { RoomType } from "@/lib/types";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import type { AdminGroupMember, RoomType } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RoomIcon } from "@/components/rooms/RoomIcon";
-
-interface GroupMember {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  picture: string | null;
-  role: "admin" | "member";
-  joined_at: string;
-  last_active_at: string | null;
-  suspended_at: string | null;
-  deleted_at: string | null;
-}
+import { GroupMemberList } from "@/components/admin/GroupMemberList";
 
 interface OwnedGroup {
   id: string;
   name: string;
   type: RoomType;
   created_at: string;
-  members: GroupMember[];
+  members: AdminGroupMember[];
 }
 
 // The expanded part of an owner's row in the users table: each group they
@@ -50,22 +35,7 @@ export function OwnerGroups({ userId }: { userId: string }) {
               {g.type === "trip" ? "Trip" : "Flat"} · {g.members.length} {g.members.length === 1 ? "person" : "people"}
             </span>
           </Link>
-          <ul className="flex flex-col">
-            {g.members.map((m) => (
-              <li key={m.id}>
-                <Link href={`/admin/users/${m.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-xl px-2 py-1.5 hover:bg-foreground/5">
-                  <Avatar name={m.name} picture={m.picture} size={28} />
-                  <span className="text-sm font-medium min-w-28">{m.name}</span>
-                  {m.role === "admin" && <Badge tone="primary">Owner</Badge>}
-                  {m.suspended_at && <Badge tone="danger">Suspended</Badge>}
-                  {m.deleted_at && <Badge>Deleted</Badge>}
-                  <span className="text-xs text-foreground/55 truncate max-w-60">{m.email ?? "—"}</span>
-                  <span className="text-xs text-foreground/55">{m.phone ?? ""}</span>
-                  <span className="text-xs text-foreground/45 ml-auto">Active {timeAgo(m.last_active_at)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <GroupMemberList members={g.members} />
         </div>
       ))}
     </div>

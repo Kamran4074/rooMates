@@ -945,7 +945,7 @@ route("post", "/api/admin/reports/{id}/resolve", "Admin", "dismiss, resolve, or 
   status: 200,
   errors: adminOnly,
 });
-route("get", "/api/admin/rooms", "Admin", "All expense rooms (support view)", { query: roomsQuery, errors: adminOnly });
+route("get", "/api/admin/rooms", "Admin", "All groups with their current owner, size, total spent, last activity and members. Search by group name or owner name/email; sort newest, oldest, largest, most_spent or recent_activity", { query: roomsQuery, errors: adminOnly });
 route("get", "/api/admin/rooms/{id}", "Admin", "Read-only view of any room: members, recent expenses, balances", { params: idParams, errors: adminOnly });
 route("get", "/api/admin/audit-logs", "Admin", "Who did what, newest first", { query: pageQuery, errors: adminOnly });
 

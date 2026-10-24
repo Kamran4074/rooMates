@@ -42,8 +42,13 @@ export const reportsQuery = paginationQuery.extend({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
 });
 
+export const ROOM_SORTS = ["newest", "oldest", "largest", "most_spent", "recent_activity"] as const;
+export type RoomSort = (typeof ROOM_SORTS)[number];
+
 export const roomsQuery = paginationQuery.extend({
+  // Matches the group's name, or its owner's name or email.
   search: z.string().trim().max(100).optional(),
+  sort: z.enum(ROOM_SORTS).default("newest"),
 });
 
 export const reasonSchema = z.object({
